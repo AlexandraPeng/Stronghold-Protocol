@@ -1,0 +1,14 @@
+{
+  "source": "https://github.com/Duo-Bu/Stronghold-Protocol-v0.1.3patch",
+  "commit": "a9c536d68ef6effc5bc672ceb3d37b6581e3f97c",
+  "base": "0.2.1-fusion",
+  "changes": [
+    "selected expanded skill trigger ranges",
+    "reserve Egir revival slot before deployment callbacks"
+  ],
+  "preserved": [
+    "newer devour fixes",
+    "deploy skill activation and animation fixes",
+    "voices and skins"
+  ]
+}
