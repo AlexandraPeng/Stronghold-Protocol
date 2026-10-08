@@ -20,8 +20,8 @@ android {
         applicationId "com.pyf.stronghold"
         minSdk 24
         targetSdk 34
-        versionCode 20261008
-        versionName "0.2.1-fusion"
+        versionCode 20261009
+        versionName "0.2.1-fusion-patch1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {

@@ -5,7 +5,7 @@
 - 网页端：Node.js 服务端与浏览器客户端，中日干员语音、皮肤选择。
 - 安卓端：ARM64、Android 7+，内嵌服务支持离线，也可填写远程服务器地址联机。
 - 修复：指定技能按扩大后的范围触发，阿戈尔复活名额在部署回调前预留；保留融合版较新的吞噬和技能修复。
-- 这里只同步源码，不上传个人服务器地址、私钥、密码、游戏素材、APK 或本机构建缓存。
+- [下载 Android APK](https://github.com/AlexandraPeng/Stronghold-Protocol/releases/tag/v0.2.1-fusion-patch1)：Android 7+ / ARM64，支持离线与服务器联机。安装包发布在 Releases，Git 源码不含素材、APK、个人服务器地址、私钥或构建缓存。
 
 具体来源、构建步骤和测试限制见 [本分支说明](docs/LOCAL_FORK.md)。下方为保留的上游说明，其中上游下载链接和历史记录不代表本仓库已发布安装包。
 

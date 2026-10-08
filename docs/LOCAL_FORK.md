@@ -22,7 +22,7 @@ npm start
 
 使用 Java 17、Android SDK 34/build-tools 34.0.0 和 Gradle 8.0.2，先准备网页素材，再运行 `npm run bundle:android`，然后在 android 目录构建。`android/local.properties` 可设置本机 sdk.dir，但不得提交。签名通过 SP_STORE_FILE、SP_STORE_PASSWORD、SP_KEY_ALIAS、SP_KEY_PASSWORD 环境变量配置，私钥留在本机。应用 ID 为 com.pyf.stronghold，支持 ARM64。公开版不预填个人服务器地址，请在应用中填写自己的完整 http:// 或 https:// 地址。
 
-仓库包含补丁后的 Android 源码；此前本地生成的 APK 未重新打包此补丁，不能视为当前源码的安装包。没有真实安卓设备验收记录。
+已重新构建 `0.2.1-fusion-patch1` APK，包含当前补丁，安装包见 [GitHub Release](https://github.com/AlexandraPeng/Stronghold-Protocol/releases/tag/v0.2.1-fusion-patch1)。包内源码与资源完整性、APK 签名均已验证；没有真实安卓设备验收记录。
 
 ## 修改与验证（2026-10-08）
 
