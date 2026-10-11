@@ -50,7 +50,7 @@ test('matchmaking: solo queue starts room immediately', () => {
   lobby.shutdown();
 });
 
-test('matchmaking: 4 coop players in same difficulty form a room', () => {
+test('matchmaking: 6 coop players in same difficulty form a room', () => {
   let now = 1000;
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, now: () => now });
@@ -60,11 +60,13 @@ test('matchmaking: 4 coop players in same difficulty form a room', () => {
     createMockSession('p2', 'Doctor_2'),
     createMockSession('p3', 'Doctor_3'),
     createMockSession('p4', 'Doctor_4'),
+    createMockSession('p5', 'Doctor_5'),
+    createMockSession('p6', 'Doctor_6'),
   ];
   sessions.forEach((s) => registry.byPlayerId.set(s.playerId, s));
 
   // 前 3 人入队
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const res = lobby.onMessage(sessions[i], { t: 'match.queue', mode: 'coop', difficulty: 'HARD' });
     assert.equal(res.ok, true);
     assert.equal(sessions[i].roomCode, null, 'should wait in queue');
@@ -74,7 +76,7 @@ test('matchmaking: 4 coop players in same difficulty form a room', () => {
   }
 
   // 第 4 人入队触发满员撮合
-  const res4 = lobby.onMessage(sessions[3], { t: 'match.queue', mode: 'coop', difficulty: 'HARD' });
+  const res4 = lobby.onMessage(sessions[5], { t: 'match.queue', mode: 'coop', difficulty: 'HARD' });
   assert.equal(res4.ok, true);
 
   // 4 人应分配在同一房间
@@ -85,12 +87,12 @@ test('matchmaking: 4 coop players in same difficulty form a room', () => {
     const found = s.sent.find((m) => m.t === 'match.found');
     assert.ok(found);
     assert.equal(found.roomCode, roomCode);
-    assert.equal(found.humans, 4);
+    assert.equal(found.humans, 6);
   }
 
   const room = lobby.getRoom(roomCode);
   assert.ok(room);
-  assert.equal(room.activeHumans().length, 4);
+  assert.equal(room.activeHumans().length, 6);
   assert.equal(room.seats.filter((s) => s && s.isBot).length, 0);
 
   lobby.shutdown();
@@ -124,7 +126,7 @@ test('matchmaking: timeout with fillBots=true automatically fills AI teammates',
   assert.ok(room);
   assert.equal(room.activeHumans().length, 2);
   const bots = room.seats.filter((s) => s && s.isBot);
-  assert.equal(bots.length, 2, 'remaining 2 seats should be filled with bots');
+  assert.equal(bots.length, 4, 'remaining 4 seats should be filled with bots');
 
   lobby.shutdown();
 });
@@ -316,3 +318,25 @@ test('maintenance: 60s countdown ticks and completes with grace shutdown', () =>
   lobby.shutdown();
 });
 
+
+ test('matchmaking separates ultimate stacking from standard ultimate rooms', () => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry });
+  try {
+    const host = createMockSession('stackHost');
+    const normal = createMockSession('normal');
+    const special = createMockSession('special');
+    for (const s of [host, normal, special]) registry.byPlayerId.set(s.playerId, s);
+    assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'FUNNY', uniteStacking: true }).ok, true);
+    const room = lobby.roomOf(host);
+    lobby.matchmaker.enqueue(host, { mode: 'coop', difficulty: 'ABYSS' });
+    lobby.matchmaker.enqueue(normal, { mode: 'coop', difficulty: 'ABYSS', fillBots: false });
+    lobby.matchmaker.tick();
+    assert.equal(normal.roomCode, null);
+    lobby.matchmaker.enqueue(special, { mode: 'coop', difficulty: 'NORMAL', uniteStacking: true, fillBots: false });
+    lobby.matchmaker.tick();
+    assert.equal(special.roomCode, room.code);
+    assert.equal(room.uniteStacking, true);
+    assert.equal(room.difficulty, 'ABYSS');
+  } finally { lobby.shutdown(); }
+});

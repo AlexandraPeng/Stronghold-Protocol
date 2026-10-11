@@ -2,6 +2,7 @@
 
 基于 [sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol) 和 [Paper-Yuan/Stronghold-Protocol](https://github.com/Paper-Yuan/Stronghold-Protocol) 的个人维护版本，保留网页联机与安卓离线/联机源码，并选择性合入 [Duo-Bu 补丁](https://github.com/Duo-Bu/Stronghold-Protocol-v0.1.3patch)。非官方同人，素材版权归原权利人；请阅读 LICENSE、NOTICE.md 与 THIRD-PARTY-NOTICES.md。
 
+- 本分支同盟模式支持最多 **6 人**；扩容参考 [LongQianChen 的容量分支](https://github.com/LongQianChen/Stronghold-Protocol/tree/feat/IncreasePlayerCapacity)，采用席位和联防来源限制分离的处理，保留本分支的共享卡池和六张机变规则。
 - 网页端：Node.js 服务端与浏览器客户端，中日干员语音、皮肤选择。
 - 安卓端：ARM64、Android 7+，内嵌服务支持离线，也可填写远程服务器地址联机。
 - 修复：指定技能按扩大后的范围触发，阿戈尔复活名额在部署回调前预留；保留融合版较新的吞噬和技能修复。
@@ -23,9 +24,9 @@ pinned: false
 
 # 卫戍协议：盟约 · Stronghold Protocol: Alliance
 
-《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
+《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–6 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.2.1-fusion-2ea44f)
+![version](https://img.shields.io/badge/version-0.2.1-fusion-patch2-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -58,7 +59,7 @@ English summary: [below](#english).
 
 「卫戍协议：盟约」是自走棋 + 塔防：休整期在调度中心招募干员、摆阵、配装备，作战期干员自动部署，迎击从红门涌来的敌人，漏过去的敌人扣目标生命值。本项目在浏览器里复刻了这一玩法，规则和数值尽量对照官方数据表与 PRTS 核对。
 
-- **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
+- **独立模拟**（单人）与**同盟模拟**（1–6 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
 - 当前版本 0.1.4：修复了 0.1.3 发布后玩家和 GitHub 上反馈的问题，并合并了多位贡献者的 PR，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
 
@@ -279,7 +280,7 @@ GOLDEN_FULL=1 node --test test/golden.test.js           # 黄金结果：固定�
 
 ## English
 
-An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess tower-defense mode *Stronghold Protocol: Alliance*, played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host.
+An **unofficial, non-commercial fan remake** of Arknights' seasonal auto-chess tower-defense mode *Stronghold Protocol: Alliance*, played in the browser: solo, or 1–6 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host.
 
 - **Run:** download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads ~270 MB of art from public mirrors, the emotes and the how-to-play pages included; the official 3D board, some official HUD icons and two enemy models are extracted from a local Arknights client — without one the game uses the 2D board and look-alike stand-ins, and a server can copy `public/assets/local/` and `data/local-assets.json` from the release bundle of the same version).
 - **Android:** an APK ships from [Releases](../../releases/latest) (~285 MB, Android 7.0+ / arm64-v8a). It embeds the Node.js server, so the phone hosts the game — solo with no network at all, and friends on the same Wi-Fi connect to it (from a browser, no APK needed). Each release publishes the SHA-256 and the certificate fingerprint. Built from the `feature/android-client` branch; see [docs/ANDROID.md](https://github.com/Paper-Yuan/Stronghold-Protocol/blob/feature/android-client/docs/ANDROID.md).

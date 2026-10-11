@@ -2941,3 +2941,51 @@ test(`${nm('enemy_10122_uacann_2')}: its 燃烧区域 (不可对空) spares a fl
   assert.ok(!burns.some((c) => c.target === y), 'the dragon does not');
   assert.ok(!h.hooksOf('damaged').some((c) => c.source === e && c.target === y), 'nor is it shot or splashed');
 });
+
+for (const key of ['enemy_1288_duskls', 'enemy_1288_duskls_2', 'enemy_1292_duskld']) {
+  test(`${key}: blocked ember stays in place during rebirth and is blocked again with free capacity`, () => {
+    const h = arena({ units: [{ chessId: 't_wall', row: 10, col: 7 }] });
+    h.step();
+    const wall = h.unit('t_wall');
+    const e = put(h, key, [10, 7], { move: true });
+    assert.ok(h.b._checkBlock(e));
+    const pos = [e.x, e.y];
+    killed(h, e);
+    h.run(0.9);
+    assert.deepEqual([e.x, e.y], pos);
+    h.run(0.2);
+    assert.equal(e.blockedBy, wall);
+    h.run(3);
+    assert.equal(e.blockedBy, wall);
+    assert.deepEqual([e.x, e.y], pos);
+  });
+}
+
+for (const full of [false, true]) {
+  test(`walking warrior rebirth: blocker capacity full=${full}`, () => {
+    const h = arena({ units: [{ chessId: 't_wall', row: 9, col: 7 }] });
+    h.step();
+    const wall = h.unit('t_wall');
+    const e = put(h, 'enemy_1288_duskls', [9, 8], {
+      move: true, route: { motion: 'WALK', start: [9, 8], end: [9, 1], checkpoints: [] },
+    });
+    assert.ok(h.runUntil(() => e.blockedBy === wall, 10));
+    const pos = [e.x, e.y];
+    killed(h, e);
+    if (full) for (let i = 0; i < 3; i++) {
+      const other = put(h, 'enemy_1288_duskls', [9, 7]);
+      assert.ok(h.b._checkBlock(other));
+    }
+    h.run(0.9);
+    assert.deepEqual([e.x, e.y], pos);
+    h.run(2);
+    if (full) {
+      assert.equal(e.blockedBy, null);
+      assert.ok(h.runUntil(() => e.x < wall.x, 6), `ember can pass when all three block slots are occupied: x=${e.x}`);
+      assert.equal(wall.blocking.length, 3);
+    } else {
+      assert.equal(e.blockedBy, wall);
+      assert.deepEqual([e.x, e.y], pos);
+    }
+  });
+}

@@ -607,3 +607,8 @@
   letter-spacing: .02em;
 }
 
+
+/* The additional ruleset has a compact full-width card below the two base modes. */
+.mode-card--stacking { grid-column: 1 / -1; min-height: 0; flex-direction: row; gap: .26rem; }
+.mode-card--stacking .mode-card__text { flex: 1; min-width: 0; }
+.mode-card--stacking .mode-card__name { font-size: .32rem; }

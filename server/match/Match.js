@@ -237,8 +237,9 @@ export class Match {
     this.opts = opts;
     this.roomCode = opts.roomCode ?? '----';
     this.mode = opts.mode === 'solo' ? 'solo' : 'coop';
-    this.difficulty = opts.difficulty;
-    this.modeId = opts.modeId || modeIdFor(this.mode, opts.difficulty);
+    this.uniteStacking = this.mode === 'coop' && opts.uniteStacking === true;
+    this.difficulty = this.uniteStacking ? 'ABYSS' : opts.difficulty;
+    this.modeId = this.uniteStacking ? modeIdFor('coop', 'ABYSS') : (opts.modeId || modeIdFor(this.mode, opts.difficulty));
     this.seed = (Number(opts.seed) >>> 0) || 1;
     this.log = opts.log || noopLog;
     this.sendFn = opts.send;
@@ -884,7 +885,7 @@ export class Match {
       deadline: this.deadline,
       serverNow: this.sched.now(),
       modeId: this.modeId,
-      difficulty: this.difficulty,
+      difficulty: this.difficulty, uniteStacking: this.uniteStacking,
       stageId: this.stageId,
       factions: this.factions.slice(),
       disabledBonds: [...new Set([...this.disabledBonds, ...this.staticInactiveBonds])].sort(),
@@ -2067,7 +2068,7 @@ export class Match {
       spawns: this._sanitizeSpawns(wave.spawns),
       routes: wave.routes,
       sharedBoss: null,
-      flags: { layerGainsEnabled: false, ...this.gd.dp },
+      flags: { ...this.gd.dp, layerGainsEnabled: this.uniteStacking },
       fieldId: 'u',
       // leaked enemies re-enter with the stats they had: the round template's stat overrides apply again
       enemyOverrides: this.wave && this.wave.overrides ? this.wave.overrides : {},
@@ -2935,9 +2936,16 @@ export class Match {
       if (coins > 0) { ps.pendingFunds += coins; ps.stats.fundsGained += coins; }
       for (const b of ps.bounties) b.roundsLeft--;
       ps.bounties = ps.bounties.filter((b) => b.roundsLeft > 0);
-      // IN_BATTLE layer gains (normal battles only), at most the room left under BOND_LAYER_CAP (999, as the battle's
+      // IN_BATTLE layer gains (plus unite in the opt-in mode), at most the room left under BOND_LAYER_CAP (999, as the battle's
       // live copy: Battle.addLayers); a bond at the cap gains nothing and dispatches nothing
-      for (const [bondId, n] of Object.entries(r.layerGains || {})) {
+      const gains = { ...(r.layerGains || {}) };
+      // Unite reports only its own increments; the normal-field layers were already in its starting input.
+      if (this.uniteStacking && uniteRan && plan.helpers.includes(ps) && up) {
+        for (const [id, n] of Object.entries(up.layerGains || {})) {
+          if (Number.isFinite(n) && n > 0) gains[id] = (gains[id] || 0) + n;
+        }
+      }
+      for (const [bondId, n] of Object.entries(gains)) {
         if (!this.gd.bond(bondId) || !(n > 0)) continue;
         const before = ps.layers[bondId] || 0;
         const add = layerGainRoom(before, Math.floor(n));
@@ -3253,7 +3261,7 @@ export class Match {
       result = buildResult(this, this.outcome);
     } catch (e) {
       this.reportError('buildResult', e);
-      result = { t: 'm.result', victory: !!victory, roundsPassed: 0, reason, modeId: this.modeId, difficulty: this.difficulty, players: [] };
+      result = { t: 'm.result', victory: !!victory, roundsPassed: 0, reason, modeId: this.modeId, difficulty: this.difficulty, uniteStacking: this.uniteStacking, players: [] };
     }
     this.lastResultMsg = result;
     this.markPublic();

@@ -391,6 +391,9 @@ function equipCheck(ctx, itemPiece, targetPiece) {
   const item = ctx.getItem(itemPiece.id);
   if (item?.itemType === 'MAGIC') return { ok: false, code: 'BAD_TARGET', reason: t('该道具需要放置在战场上使用') };
   if (!isObj(targetPiece) || targetPiece.kind !== 'chess') return { ok: false, code: 'BAD_TARGET', reason: t('装备只能配发给干员') };
+  if (ctx.getChess(targetPiece.id)?.isDiy && item?.buffs?.some((b) => b?.key === 'use_equip_recruit_new_char_and_give_char_to_player_most_bond')) {
+    return { ok: false, code: 'BAD_TARGET', reason: t('信标不能用于自选协防干员') };
+  }
   return { ok: true, action: 'equip' };
 }
 

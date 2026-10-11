@@ -318,6 +318,8 @@ export class SpineActor {
       const e = this.spine.state.tracks[0];
       if (e) {
         e.timeScale = ts;
+        // A target death may have stopped this same track just before the next hit.
+        e.loop = true;
         // re-phase gently so the strike frame lines up with this attack
         const t = e.trackTime % loopDur;
         let d = hit - t;

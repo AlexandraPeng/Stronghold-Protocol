@@ -140,6 +140,7 @@ export function buildResult(m, outcome) {
     teamLp: m.teamLp != null ? Math.max(0, Math.round(m.teamLp)) : null,
     modeId: m.modeId,
     difficulty: m.difficulty,
+    uniteStacking: !!m.uniteStacking,
     stageId: m.stageId,
     bossId: m.bossId,
     hiddenBossId: m.hiddenBossId,

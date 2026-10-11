@@ -178,7 +178,7 @@ function DifficultyPicker({ room, isHost, busy, onPick }) {
     </div>`;
   }
   return html`<div class="dpick" role="radiogroup" aria-label="模拟难度">
-    ${DIFFICULTIES.map((d) => html`<button key=${d} type="button" role="radio" aria-checked=${room.difficulty === d ? 'true' : 'false'}
+    ${(room.uniteStacking ? ['ABYSS'] : DIFFICULTIES).map((d) => html`<button key=${d} type="button" role="radio" aria-checked=${room.difficulty === d ? 'true' : 'false'}
         class=${`dpick__opt${room.difficulty === d ? ' is-active' : ''}`} style=${`--d-color:${DIFFICULTY_COLORS[d]}`}
         disabled=${!!busy} onClick=${() => room.difficulty !== d && onPick(d)}>
       <${DifficultyIcon} difficulty=${d} />${DIFFICULTY_NAMES[d].replace('模拟', '')}
@@ -280,7 +280,7 @@ export function RoomScreen() {
       </div>
       <div class="topbar__center">
         <${MicroLabel} tone="mint">${coop ? 'ALLIANCE LOBBY' : 'SOLO SIMULATION'}<//>
-        <h1 class="topbar__title">${coop ? '同盟模拟' : '独立模拟'}<span class="topbar__sep"></span><${DifficultyTag} difficulty=${room.difficulty} size="lg" /></h1>
+        <h1 class="topbar__title">${room.uniteStacking ? '终极联防·叠层' : coop ? '同盟模拟' : '独立模拟'}<span class="topbar__sep"></span><${DifficultyTag} difficulty=${room.difficulty} size="lg" /></h1>
       </div>
       <div class="topbar__right">
         ${coop ? html`<${InviteBox} code=${room.code} name=${me.name} difficulty=${room.difficulty} />` : html`<div class="solo-note"><${MicroLabel}>SINGLE OPERATOR<//><span>仅限 1 名博士</span></div>`}

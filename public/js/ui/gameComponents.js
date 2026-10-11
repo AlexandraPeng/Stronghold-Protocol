@@ -261,7 +261,7 @@ export function PlayerAvatar({ player, size = 'md', self = false, class: cls }) 
   const glyph = [...(player?.name || '').trim()][0] || '?';
   const dead = player?.alive === false || player?.status === 'dead';
   const left = player?.status === 'left';
-  const hue = [162, 196, 38, 280][((player?.seat | 0) % 4 + 4) % 4];
+  const hue = [162, 196, 38, 280, 18, 330][((player?.seat | 0) % 6 + 6) % 6];
   return html`<span class=${cx('pavatar', `pavatar--${size}`, self && 'is-self', dead && 'is-dead', left && 'is-left', player?.isBot && 'is-bot',
       player?.connected === false && !player?.isBot && 'is-offline', cls)} style=${`--seat-hue:${hue}`}>
     <span class="pavatar__img">

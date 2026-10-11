@@ -15,7 +15,7 @@ import { DataSource, hasGeneratedData } from '../../server/sim/simdata.js';
 import { placeClass } from '../../server/match/board.js';
 import { buildResult } from '../../server/match/results.js';
 import { GEO } from '../../shared/constants.js';
-import { DATA, makeMatch, legalTileFor } from './harness.js';
+import { DATA, makeMatch, legalTileFor, give, giveItem } from './harness.js';
 
 const REAL = { skip: !hasGeneratedData() };
 const wire = (msg) => JSON.parse(JSON.stringify(msg));
@@ -405,3 +405,19 @@ test('a DIY 鸿雪 (her operator kit): her 打字机 piece comes to the hand in 
   h.invariants();
   m.dispose();
 });
+
+for (const beacon of ['chess_item_5_04_e_a', 'chess_item_5_04_e_b'])
+for (const id of [T5A, T5B, T6A, 'chess_char_5_diy2_b']) {
+  test(`${beacon}: beacon rejects custom operator ${id} without consuming either piece`, REAL, () => {
+    const h = diyMatch({ fake: true }).start();
+    h.toPrep(1);
+    const ps = h.ps('p_0');
+    clear(ps);
+    const target = give(h.m, ps, id, 'hand');
+    const item = giveItem(h.m, ps, beacon);
+    const before = JSON.stringify([ps.hand, ps.temp, ps.offers, ps.effects]);
+    const result = ps.equip(item.uid, target.uid);
+    assert.equal(result.error, 'BAD_TARGET');
+    assert.equal(JSON.stringify([ps.hand, ps.temp, ps.offers, ps.effects]), before);
+  });
+}

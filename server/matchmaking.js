@@ -16,7 +16,7 @@ import { sendSession } from './net.js';
 const MATCHMAKING_DEFAULTS = Object.freeze({
   tickIntervalMs: 1000,
   timeoutMs: 10_000, // 10 秒超时自动补 AI 或发车
-  targetPlayers: MAX_SEATS, // 4 人同盟
+  targetPlayers: MAX_SEATS, // 6 人同盟
 });
 
 export class Matchmaker {
@@ -57,7 +57,9 @@ export class Matchmaker {
    * @param {any} session
    * @param {{ mode?: string, difficulty?: string, fillBots?: boolean }} msg
    */
-  enqueue(session, { mode = 'coop', difficulty = 'FUNNY', fillBots = true } = {}) {
+  enqueue(session, { mode = 'coop', difficulty = 'FUNNY', fillBots = true, uniteStacking = false } = {}) {
+    if (uniteStacking && mode !== 'coop') return { error: 'BAD_MSG' };
+    if (uniteStacking) difficulty = 'ABYSS';
     const curRoom = this.lobby.roomOf(session);
     if (curRoom && curRoom.match) {
       return { error: 'ROOM_STARTED', detail: 'leave your running match first' };
@@ -98,6 +100,7 @@ export class Matchmaker {
       session,
       mode: mode === 'solo' ? 'solo' : 'coop',
       difficulty: String(difficulty),
+      uniteStacking: !!uniteStacking,
       fillBots: fillBots !== false,
       joinedAt: this.lobby.now(),
     };
@@ -233,7 +236,7 @@ export class Matchmaker {
       // 寻找相符难度的散人
       for (const [pid, entry] of [...this.queue.entries()]) {
         if (room.freeSeat() < 0) break;
-        if (entry.mode === targetMode && entry.difficulty === targetDiff) {
+        if (entry.mode === targetMode && entry.difficulty === targetDiff && !!entry.uniteStacking === !!room.uniteStacking) {
           this.queue.delete(pid);
           // 加入房间
           this.lobby.join(entry.session, { code: room.code });
@@ -273,7 +276,7 @@ export class Matchmaker {
 
     const buckets = new Map();
     for (const [pid, entry] of this.queue.entries()) {
-      const key = `${entry.mode}:${entry.difficulty}`;
+      const key = `${entry.mode}:${entry.difficulty}:${!!entry.uniteStacking}`;
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(entry);
     }
@@ -328,7 +331,7 @@ export class Matchmaker {
     const hostEntry = matched[0];
     const hostSession = hostEntry.session;
 
-    const createRes = this.lobby.create(hostSession, { mode, difficulty });
+    const createRes = this.lobby.create(hostSession, { mode, difficulty, uniteStacking: !!hostEntry.uniteStacking });
     if (!createRes || createRes.error) {
       this.lobby.log.error('[matchmaker] failed to create room for match', createRes);
       return;

@@ -157,6 +157,7 @@ export class Room {
     this.code = code;
     this.mode = mode;
     this.difficulty = difficulty;
+    this.uniteStacking = false;
     /** @type {string | null} */
     this.hostId = null;
     /** @type {(Seat | null)[]} */
@@ -208,6 +209,7 @@ export class Room {
       hostId: this.hostId,
       mode: this.mode,
       difficulty: this.difficulty,
+      uniteStacking: this.uniteStacking,
       inMatch: !!this.match,
       matching: this.matching || null,
       seats: this.seats.map((s) => (s
@@ -488,7 +490,9 @@ export class Lobby {
   // room.* handlers
   // ---------------------------------------------------------------------------------------------------
 
-  create(session, { mode, difficulty }) {
+  create(session, { mode, difficulty, uniteStacking = false }) {
+    if (uniteStacking && mode !== 'coop') return fail(ERR.BAD_MSG, '联防叠层仅限同盟模拟');
+    if (uniteStacking) difficulty = 'ABYSS';
     if (this.isDraining) return fail(ERR.MAINTENANCE, '服务正在热重载更新中，暂停创建新房间，请稍候连接新节点');
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
@@ -506,6 +510,7 @@ export class Lobby {
     if (!code) return fail(ERR.INTERNAL, 'no room code available');
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now());
+    room.uniteStacking = !!uniteStacking;
     room.ownerKey = key;
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
@@ -570,8 +575,9 @@ export class Lobby {
         code: r.code,
         name: host?.name || `同盟 #${r.code}`,
         difficulty: r.difficulty,
+        uniteStacking: r.uniteStacking,
         humans,
-        maxSeats: 10,
+        maxSeats: MAX_SEATS,
         inMatch: !!r.match,
       });
     }
@@ -720,6 +726,7 @@ export class Lobby {
   setDifficulty(session, { difficulty }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.uniteStacking && difficulty !== 'ABYSS') return fail(ERR.BAD_MSG, '终极联防叠层模式固定为终极难度');
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
@@ -966,6 +973,7 @@ export class Lobby {
         roomCode: room.code,
         mode: room.mode,
         difficulty: room.difficulty,
+        uniteStacking: room.uniteStacking,
         modeId: modeIdFor(room.mode, room.difficulty),
         seats,
         // the spectator seats (header): watched like eliminated players, never players

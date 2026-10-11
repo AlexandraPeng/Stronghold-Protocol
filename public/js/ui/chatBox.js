@@ -86,6 +86,8 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
       case 1: return 'seat-1';
       case 2: return 'seat-2';
       case 3: return 'seat-3';
+      case 4: return 'seat-4';
+      case 5: return 'seat-5';
       default: return '';
     }
   };

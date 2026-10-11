@@ -75,6 +75,10 @@ const MODE_CARDS = [
     desc: `与至多 ${MAX_SEATS - 1} 名博士组成同盟，共享干员池，联防协作抵御敌潮。`,
     points: [`1–${MAX_SEATS} 名博士 · 可由 AI 队友补位`, '联防阶段 · 最终攻势合并生命值'],
   },
+  { id: 'uniteStacking', name: '终极联防·叠层', en: 'ULTIMATE ALLIANCE', icon: 'users',
+    desc: '终极难度下协同作战，联防获得的永久层数保留至后续回合。',
+    points: ['固定终极难度 · 可添加 AI 队友', '保留原有层数上限 · 联防收益归属原玩家'] },
+
 ];
 
 /**
@@ -194,7 +198,7 @@ function TipsPanel() {
 }
 
 function ModeCard({ card, selected, onSelect }) {
-  return html`<button type="button" class=${`mode-card brackets${selected ? ' is-selected' : ''}`} onClick=${() => onSelect(card.id)}
+  return html`<button type="button" class=${`mode-card brackets${card.id === 'uniteStacking' ? ' mode-card--stacking' : ''}${selected ? ' is-selected' : ''}`} onClick=${() => onSelect(card.id)}
       aria-pressed=${selected ? 'true' : 'false'}>
     <span class="mode-card__bg" aria-hidden="true"></span>
     <span class="mode-card__icon"><${Icon} name=${card.icon} /></span>
@@ -322,7 +326,7 @@ function MatchmakingModal({ open, onClose, onJoin, onSpectate }) {
                   <div class="mm-room-meta">
                     <span class="mm-room-diff" style=${`--d-color:${DIFFICULTY_COLORS[r.difficulty] || 'var(--mint)'}`}>
                       <${DifficultyIcon} difficulty=${r.difficulty} class="diff-glyph" />
-                      <span>${DIFFICULTY_NAMES[r.difficulty] || r.difficulty}</span>
+                      <span>${r.uniteStacking ? '终极联防·叠层' : DIFFICULTY_NAMES[r.difficulty] || r.difficulty}</span>
                     </span>
                     <span class="mm-room-players">
                       <${Icon} name="users" />
@@ -377,6 +381,7 @@ export function LobbyScreen() {
   const maint = useStore((s) => s.maintenance, shallowEqual);
   useData('config');
   const [roomMode, setRoomMode] = useState(() => (loadPref('lobby.mode', 'coop') === 'solo' ? 'solo' : 'coop'));
+  const [uniteStacking, setUniteStacking] = useState(false);
   const [difficulty, setDifficulty] = useState(() => {
     const d = loadPref('lobby.difficulty', 'FUNNY');
     return DIFFICULTIES.includes(d) ? d : 'FUNNY';
@@ -434,7 +439,13 @@ export function LobbyScreen() {
     return () => { cancelled = true; clearInterval(t); };
   }, [online]);
 
-  const pickMode = (m) => { setRoomMode(m); savePref('lobby.mode', m); };
+  const pickMode = (m) => {
+    const stacking = m === 'uniteStacking';
+    setUniteStacking(stacking);
+    setRoomMode(stacking ? 'coop' : m);
+    if (stacking) setDifficulty('ABYSS');
+    savePref('lobby.mode', stacking ? 'coop' : m);
+  };
   const pickDifficulty = (d) => { setDifficulty(d); savePref('lobby.difficulty', d); };
 
   const run = async (kind, fn) => {
@@ -447,8 +458,8 @@ export function LobbyScreen() {
       if (alive.current) setBusy(null);
     }
   };
-  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty }));
-  const queueMatch = () => run('queue', () => net.request('match.queue', { mode: roomMode, difficulty, fillBots: true }));
+  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, uniteStacking }));
+  const queueMatch = () => run('queue', () => net.request('match.queue', { mode: roomMode, difficulty, uniteStacking, fillBots: true }));
   const cancelMatch = () => run('cancel', () => net.request('match.cancel'));
   const join = (c = code) => {
     // `onClick=${join}` hands the click EVENT as the first argument, and a default parameter only applies to
@@ -516,7 +527,7 @@ export function LobbyScreen() {
       <section class="lobby-left">
         <div class="section-label"><span class="section-label__idx num">01</span>模拟方式<${MicroLabel}>MODE<//></div>
         <div class="mode-cards">
-          ${MODE_CARDS.map((c) => html`<${ModeCard} key=${c.id} card=${c} selected=${roomMode === c.id} onSelect=${pickMode} />`)}
+          ${MODE_CARDS.map((c) => html`<${ModeCard} key=${c.id} card=${c} selected=${(uniteStacking ? 'uniteStacking' : roomMode) === c.id} onSelect=${pickMode} />`)}
         </div>
 
         <div class="section-label"><span class="section-label__idx num">02</span>多人匹配<${MicroLabel}>MULTIPLAYER MATCHMAKING<//></div>
@@ -564,14 +575,14 @@ export function LobbyScreen() {
       <section class="lobby-right">
         <div class="section-label"><span class="section-label__idx num">02</span>模拟难度<${MicroLabel}>DIFFICULTY<//></div>
         <div class="diff-list">
-          ${DIFFICULTIES.map((d) => html`<${DifficultyCard} key=${d} roomMode=${roomMode} difficulty=${d} selected=${difficulty === d} onSelect=${pickDifficulty} />`)}
+          ${(uniteStacking ? ['ABYSS'] : DIFFICULTIES).map((d) => html`<${DifficultyCard} key=${d} roomMode=${roomMode} difficulty=${d} selected=${difficulty === d} onSelect=${pickDifficulty} />`)}
         </div>
         <div class="create-box">
           ${isSearching
             ? html`<div class="matchmaking-hud brackets">
                 <div class="matchmaking-hud__info">
                   <${Spinner} size="sm" />
-                  <span class="matchmaking-hud__text">正在匹配同盟 (${mm?.matched || 1}/${mm?.target || 4})...</span>
+                  <span class="matchmaking-hud__text">正在匹配同盟 (${mm?.matched || 1}/${mm?.target || MAX_SEATS})...</span>
                   <span class="matchmaking-hud__time num">${String(Math.floor((mm?.elapsed || 0) / 60)).padStart(2, '0')}:${String((mm?.elapsed || 0) % 60).padStart(2, '0')}</span>
                 </div>
                 <${Button} variant="danger" size="md" loading=${busy === 'cancel'} onClick=${cancelMatch}>取消匹配<//>
