@@ -970,11 +970,17 @@ export class UnitView {
         this._far = this._far ? s < 60 : s < 52;
         if (lvl >= 2 || this._far) interval = Math.max(interval, 2);
       }
+      // Makoto's personas extend far beyond the body's cached impostor bounds. In crowded
+      // fields a shared atlas crops them, and unbounded meshes can paint into adjacent slots.
+      // Keep this multi-form skeleton live (including its masks) at every load level; its
+      // normal foot-based depth still controls occlusion by units in front of it.
+      const livePersona = (this.info.spine || this.info.defId) === 'char_4217_makoto';
       if (this.actor.clipped) {
-        const clip = this.ctx.clipAllowed ? this.ctx.clipAllowed() : true;
+        const clip = livePersona || (this.ctx.clipAllowed ? this.ctx.clipAllowed() : true);
         this.actor.setClipping(clip);
         if (clip && this.ctx.impostors) interval = Math.max(1, interval);
       }
+      if (livePersona) interval = 0;
       if (interval > 0 && this.ctx.renderer) {
         this._updateImpostor(sc, flip, tint, animDt, interval);
       } else {

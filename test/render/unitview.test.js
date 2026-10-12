@@ -285,3 +285,39 @@ test('substitute countdown drains without falsely showing skill-ready glow', () 
   v.form = null; v.sp = v.spMax; v.update(1 / 60, cam(), 2);
   assert.equal(v.spGlow.visible, true, 'the body resumes normal ready display');
 });
+
+
+test('Makoto personas stay live and retain clipping under crowded-field LOD', async () => {
+  let allocations = 0;
+  const atlas = {
+    alloc() { allocations++; throw new Error('persona must not enter the shared atlas'); },
+    free() {}, park() {}, unpark() {}, draw() {},
+  };
+  const ctx = fakeViewCtx(fake.P, {
+    assets: store({ spine: true }), cam, impostors: atlas,
+    impostorInterval: () => 4, loadLevel: () => 3, clipAllowed: () => false,
+    renderer: { resolution: 1, render() {} },
+  });
+  const v = new UnitView(ctx, { id: 'p:makoto', side: 'ally', kind: 'op',
+    defId: 'diy', spine: 'char_4217_makoto', x: 9, y: 15, maxHp: 100, facing: 1 });
+  await tick(); await tick();
+  assert.ok(v.spineReady);
+  v.actor.clipped = true;
+  const masks = [];
+  v.actor.setClipping = (on) => masks.push(on);
+  let updates = 0;
+  const update = v.actor.update.bind(v.actor);
+  v.actor.update = (dt) => { updates++; update(dt); };
+  for (const form of ['makoto-s1', 'makoto-s2', 'makoto-s3', 'makoto-heal', 'makoto-total', null]) {
+    v.setForm(form);
+    for (let frame = 0; frame < 12; frame++) v.update(1 / 60, cam(), frame / 60);
+    assert.ok(!v.imp, 'no cached crop or shared atlas slot');
+    assert.equal(v.actor.spine.parent, v.body, 'drawn in the unit body layer');
+    assert.equal(v.actor.spine.visible, true);
+  }
+  assert.equal(allocations, 0);
+  assert.equal(updates, 72, 'no crowded-field animation frame skipping');
+  assert.equal(masks.length, 72);
+  assert.ok(masks.every(Boolean), 'persona masks are not disabled by the crowd budget');
+  v.destroy();
+});
