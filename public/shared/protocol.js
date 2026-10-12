@@ -28,7 +28,7 @@ const isList = (v, max, item) => Array.isArray(v) && v.length <= max && v.every(
 // ---- client-side combat (DESIGN §14): b.progress / b.result payloads -------------------------------------------
 
 /** Size limits of a b.result payload (the whole frame also obeys the 64 KB inbound limit). */
-export const RESULT_LIMITS = Object.freeze({ players: 4, leaked: 400, unitsEnd: 64, unitStats: 160, layerGains: 40, mods: 16, unspawned: 400 });
+export const RESULT_LIMITS = Object.freeze({ players: 4, sources: MAX_SEATS, leaked: 400, unitsEnd: 64, unitStats: 160, layerGains: 40, mods: 16, unspawned: 400 });
 const BIG = 1e13;
 const isStat = (v) => v === undefined || isNum(v, 0, BIG);
 const isModVal = (v) => v === null || isNum(v, -BIG, BIG) || isStr(v, 64) || isBool(v);
@@ -294,7 +294,7 @@ export const C2S = {
   // session & lobby
   hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6), $optional: ['token', 'version'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
-  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v) },
+  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), uniteStacking: isBool, $optional: ['uniteStacking'] },
   'room.join': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v) },
   'room.leave': {},
   'room.ready': { ready: isBool },
@@ -322,7 +322,7 @@ export const C2S = {
   'room.removeSpectator': { playerId: isId },
 
   // matchmaking (quick match queue & room browser)
-  'match.queue': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), fillBots: (v) => v == null || isBool(v), $optional: ['fillBots'] },
+  'match.queue': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), fillBots: (v) => v == null || isBool(v), uniteStacking: isBool, $optional: ['fillBots', 'uniteStacking'] },
   'match.cancel': {},
   'room.list': {},
 
@@ -366,7 +366,7 @@ export const C2S = {
     battleId: isId, gt: (v) => isNum(v, 0, 1e5), killed: (v) => isInt(v, 0, 1e5), total: (v) => isInt(v, 0, 1e5),
     leaks: (v) => isNum(v, 0, 1e6), bossDmg: (v) => isNum(v, 0, BIG),
     by: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, BIG)), done: isBool,
-    left: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isInt(x, 0, 1e5)),
+    left: (v) => isMap(v, RESULT_LIMITS.sources, isId, (x) => isInt(x, 0, 1e5)),
     $optional: ['leaks', 'bossDmg', 'by', 'done', 'left'],
   },
   'b.result': { battleId: isId, result: isBattleResult },

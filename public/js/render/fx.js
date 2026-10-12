@@ -234,6 +234,8 @@ export const FX_KINDS = Object.freeze({
   // no effect [ASSUMED], so nothing is drawn (`a: 'none'`)
   hitCap: { a: 'none', c: 0xffffff },
   // beams
+  musicArts: { a: 'music', c: 0xd18aff, pt: true }, musicPhys: { a: 'music', c: 0xffe89f, pt: true },
+  fever: { a: 'buff', c: 0xef47ae },
   beam: { a: 'beam', c: 0xff7a5a }, link: { a: 'beam', c: 0x9ff0dc }, lightning: { a: 'bolt', c: 0xc9a2ff }, tentacle: { a: 'beam', c: 0x5fe0ff },
   sandChains: { a: 'beam', c: 0xd8c8a0 }, sandChainsCharged: { a: 'beam', c: 0xffd45a },
   strike: { a: 'strike', c: 0xffe6a8 }, volley: { a: 'volley', c: 0xfff2d0 }, column: { a: 'pillar', c: 0x9ff0dc }, obelisk: { a: 'pillar', c: 0xc9a2ff },
@@ -1721,6 +1723,13 @@ export class FxSystem {
     const p = chest(at.v);
     const s = p.s;
     switch (spec.a) {
+      case 'music': {
+        this.particle('glow', p.x, p.y, { tint: col, life: Math.max(0.08, dur), s0: s / 128 * 0.24,
+          s1: s / 128 * 0.15, a0: 0.9, a1: 0 });
+        this.particle('streak', p.x + s * 0.025, p.y - s * 0.04, { tint: col, life: Math.max(0.08, dur),
+          s0: s / 128 * 0.14, s1: s / 128 * 0.1, a0: 1, a1: 0, rot: -Math.PI / 2 });
+        break;
+      }
       case 'blast': {
         if (r >= 12) { this.flashScreen(col, 0.5); break; }
         if (kind === 'bombard') { this._touchLocks(ex.id ?? ex.src ?? null); this._landed(ex.id ?? ex.src ?? null, at.x, at.y, r); }

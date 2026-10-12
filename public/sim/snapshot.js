@@ -101,6 +101,13 @@ export function unitTuple(u, t) {
       sp = spMax * (sk.timeLeft / sk.duration);
     }
   }
+  // Dollkeepers hold real skill SP throughout substitution. Show the authoritative form timer instead,
+  // including for battle-start devour and reconnects that never received the substitute FX event.
+  const substitute = u.alive && u.deployed && u.trait?.doll ? u.findBuff('trait:substitute') : null;
+  if (substitute && Number.isFinite(substitute.timeLeft) && substitute.duration > 0) {
+    spMax = substitute.duration;
+    sp = Math.max(0, Math.min(spMax, substitute.timeLeft));
+  }
   // hp is rounded up (a living unit never shows 0) but never above the rounded max HP
   const maxHp = Math.max(1, Math.round(u.s.maxHp));
   const hp = u.alive ? Math.min(Math.max(1, Math.ceil(u.hp)), maxHp) : 0;

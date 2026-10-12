@@ -1795,6 +1795,12 @@ export async function createFieldView(host, options = {}) {
     // knocked-out operators waiting to redeploy (b.snap `down`, user playtest #4 item 9): their view stays on the
     // field knocked down under a redeploy ring (UnitView.setDown) — made on the spot for one already down when this
     // field was entered; one that leaves the list without a redeploy fades out
+    const music = interp.musicAt(renderT);
+    if (music && music.t !== syncBattle.musicT) {
+      syncBattle.musicT = music.t;
+      for (const n of music.notes) if (Array.isArray(n) && Number.isFinite(n[0]) && Number.isFinite(n[1]))
+        fx.simFx(n[2] ? 'musicArts' : 'musicPhys', n[0], n[1], { dur: 0.2 });
+    }
     const down = interp.downAt(renderT);
     downSeq++;
     if (down) {

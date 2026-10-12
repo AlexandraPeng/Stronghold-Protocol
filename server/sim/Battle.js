@@ -2364,6 +2364,12 @@ export class Battle {
       killed: this.killed,
       total: this.total,
     };
+    if (this.mujica) {
+      snap.fever = this.allyUnits.filter(u => u.mem.sakiko && u.alive && u.deployed)
+        .map(u => [u.id, this.mujica.value, Math.max(0, this.mujica.until - this.time)]);
+      snap.musicNotes = [...this.mujica.notes].filter(n => !n.dead).map(n => [Math.round(n.x * 100) / 100,
+        Math.round(n.y * 100) / 100, n.type === 'arts' ? 1 : 0]);
+    }
     if (this.players.length > 1) {
       snap.dps = {};
       for (const p of this.players) snap.dps[p.playerId] = Math.floor(p.dp);

@@ -90,6 +90,13 @@ export function normalizeSnapshot(snap) {
       if (tu && tu.length === 9) tu.push(e[1], clamp(finite(e[2]), 0, 1), finite(e[3]), Math.max(0, finite(e[4])));
     }
   }
+  if (Array.isArray(snap.fever)) for (const entry of snap.fever) {
+    if (!Array.isArray(entry)) continue;
+    const tu = units.get(entry[0]);
+    if (!tu) continue;
+    if (tu.length === 9) tu.push(null, 0, 0, 0);
+    tu[13] = clamp(finite(entry[1]), 0, 450); tu[14] = clamp(finite(entry[2]), 0, 20);
+  }
   let down = null;
   if (Array.isArray(snap.down)) {
     for (const d of snap.down) {
@@ -263,6 +270,12 @@ export class SnapshotBuffer {
     return s[ia < 0 ? 0 : ia].down || null;
   }
 
+  musicAt(time = this.renderT) {
+    if (!this.snaps.length || !Number.isFinite(time)) return null;
+    const s = this.snaps[Math.max(0, this._indexAt(time))];
+    return { t: s.t, notes: Array.isArray(s.raw.musicNotes) ? s.raw.musicNotes : [] };
+  }
+
   /**
    * Interpolated state at `time` (default renderT). Fills and returns `out` (a Map id → sample object reused
    * across calls: `{ id, x, y, hp, maxHp, sp, spMax, flags, anim, vx, vy, seen, el, elFill, elUntil, elDur }` —
@@ -317,6 +330,7 @@ export class SnapshotBuffer {
       o.flags = a[7];
       o.anim = a[8];
       if (a.length > 9) { o.el = a[9]; o.elFill = a[10]; o.elUntil = a[11]; o.elDur = a[12]; } else if (o.el !== null) { o.el = null; o.elFill = 0; o.elUntil = 0; o.elDur = 0; }
+      o.fever = a.length > 13 ? a[13] : null; o.feverTime = a[14] || 0;
       o.seen = stamp;
     }
     for (const id of out.keys()) if (!A.units.has(id)) out.delete(id);

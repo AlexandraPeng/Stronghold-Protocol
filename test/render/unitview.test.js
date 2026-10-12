@@ -272,3 +272,16 @@ describe('enemy preview pen figures (lod idle)', () => {
     assert.ok(steps() <= 12, `idle loop stepped ≈ every 3rd frame (${steps()} of 30)`);
   });
 });
+
+test('substitute countdown drains without falsely showing skill-ready glow', () => {
+  const v = view({ kind: 'op', defId: 'char_1023_ghost2', form: 'doll' });
+  v.spMax = 21; v.sp = 21; v.flags = 0;
+  v.update(1 / 60, cam(), 0);
+  const full = v.spFill.width;
+  assert.ok(v.spFill.visible && full > 0);
+  assert.equal(v.spGlow.visible, false, 'a full substitute timer is not a ready skill');
+  v.sp = 10.5; v.update(1 / 60, cam(), 1);
+  assert.ok(Math.abs(v.spFill.width / full - 0.5) < 1e-6);
+  v.form = null; v.sp = v.spMax; v.update(1 / 60, cam(), 2);
+  assert.equal(v.spGlow.visible, true, 'the body resumes normal ready display');
+});

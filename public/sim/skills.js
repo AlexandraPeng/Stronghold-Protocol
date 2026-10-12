@@ -44,7 +44,37 @@
 import { absoluteRangeKeys, canTargetEnemy } from './targeting.js';
 import { AUTO_OP_COOLDOWN, COLS, ROWS } from './constants.js';
 
-const TICK_RULES = new Set(['SP_FULL', 'SEARCH', 'CUSTOM_RANGE', 'SKILL_RANGE', 'GDGLOW_SKILL_2']);
+const TICK_RULES = new Set(['EXPANDED_SKILL_RANGE', 'SP_FULL', 'SEARCH', 'CUSTOM_RANGE', 'SKILL_RANGE', 'GDGLOW_SKILL_2']);
+// User-selected operators/skills only; normal and elite share skill IDs.
+// Non-expanding skills, Texas alter and global-target skills retain their rules.
+const EXPANDED_TRIGGERS = new Map([
+  ['chess_char_1_19', new Set(["skchr_wildmn_2"])],
+  ['chess_char_3_02', new Set(["skchr_ayer_2"])],
+  ['chess_char_4_02', new Set(["skchr_mostma_3"])],
+  ['chess_char_4_09', new Set(["skchr_mizuki_3"])],
+  ['chess_char_4_22', new Set(["skchr_svrash_3"])],
+  ['chess_char_4_23', new Set(["skchr_gvial2_2"])],
+  ['chess_char_5_01', new Set(["skchr_excu2_1", "skchr_excu2_3"])],
+  ['chess_char_5_12', new Set(["skchr_dusk_2", "skchr_dusk_3"])],
+  ['chess_char_5_14', new Set(["skchr_svash2_3"])],
+  ['chess_char_5_18', new Set(["skchr_gvial2_2"])],
+  ['chess_char_5_21', new Set(["skchr_sntlla_2"])],
+  ['chess_char_5_22', new Set(["skchr_nymph_3"])],
+  ['chess_char_6_06', new Set(["skchr_pepe_2"])],
+  ['chess_char_6_07', new Set(["skchr_siege2_2"])],
+  ['chess_char_6_09', new Set(["skchr_cello_3"])],
+  ['chess_char_6_10', new Set(["skchr_nymph_3"])],
+  ['chess_char_6_15', new Set(["skchr_qiubai_3"])],
+  ['chess_char_6_17', new Set(["skchr_nearl2_1", "skchr_nearl2_3"])],
+  ['chess_char_1_08', new Set(['skchr_texas_2'])],
+  ['chess_char_3_18', new Set(['skchr_vulpis_2', 'skchr_vulpis_3'])],
+  ['chess_char_4_12', new Set(['skchr_glady_2'])],
+  ['chess_char_4_14', new Set(['skchr_lionhd_2'])],
+  ['chess_char_5_06', new Set(['skchr_etlchi_3'])],
+  ['chess_char_5_10', new Set(['skchr_lisa_3'])],
+  ['chess_char_5_20', new Set(['skchr_aglina_3'])],
+  ['chess_char_6_18', new Set(['skchr_whitw2_2'])],
+]);
 /** True when a SkillSpec `targeting` changes the unit's range while the skill runs (Battle._refreshRange). */
 const changesRange = (tg) => !!(tg && (tg.rangeGrid || tg.rangeExtend || tg.noRangeExtend));
 /** Enemies that satisfy a content trigger range (any targetable enemy, flyers included). */
@@ -96,6 +126,11 @@ export class SkillRuntime {
     this.healSkill = s.heal ?? (unit.profile && unit.profile.dmgType === 'heal' && !!unit.profile.heal);
     // the official skill strategies automate the manual 开启: only MANUAL skills wait for the operation cooldown
     this.manual = String(d.skillType ?? 'MANUAL').toUpperCase() === 'MANUAL';
+    const baseId = String(unit.defId ?? '').replace(/_[ab]$/, '');
+    if (this.kind !== 'passive' && this.rule !== 'SP_FULL' && EXPANDED_TRIGGERS.get(baseId)?.has(this.id)) {
+      this.expandedIgnoresTargetability = this.rule === 'SKILL_RANGE';
+      this.rule = 'EXPANDED_SKILL_RANGE';
+    }
     this.opReadyAt = -Infinity;   // no automatic cast before this battle time (AUTO_OP_COOLDOWN)
     if (this.kind === 'passive') this.baseSpCost = 0;
     this._spCostMul = 1;          // content may set spCostMul (e.g. 绝技 ×0.7) — see the accessor below
@@ -373,6 +408,17 @@ export class SkillRuntime {
     const b = this.battle;
     const u = this.unit;
     if (this.rule === 'SP_FULL') return true;
+    if (this.rule === 'EXPANDED_SKILL_RANGE') {
+      // Match the range used after activation, without activating or changing the
+      // normal attack range. Recompute for current facing, position and range buffs.
+      const tg = this.spec.targeting || {};
+      const grid = tg.rangeGrid || this.def.rangeGrid || u.rangeGrid || [[0, 0]];
+      const ext = (tg.noRangeExtend ? 0 : u.s.rangeExtend) + (tg.rangeExtend || 0);
+      const keys = absoluteRangeKeys(grid, u.tileR, u.tileC, u.dir, ext);
+      return this.expandedIgnoresTargetability
+        ? b.anyEnemyInKeys(keys)
+        : b.enemiesInKeys(keys, u, { canHitFly: true }).length > 0;
+    }
     // SEARCH: an enemy inside the initial attack range, every tick (librators / phalanxes and 安洁莉娜 do not attack
     // while the skill is off, so DEFAULT's "about to attack" never comes)
     if (this.rule === 'SEARCH') return this._defaultCondition();

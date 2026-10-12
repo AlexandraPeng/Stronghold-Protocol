@@ -91,6 +91,8 @@ export function makeDamageInfo(d = {}) {
     // whatever the source's 行动方式
     ignoreSelect: !!d.ignoreSelect,
     sourceless: !!d.sourceless,
+    // Execution consumes a hit barrier without letting it cancel the damage; HP shields still absorb.
+    pierceBarrier: !!d.pierceBarrier,
     attackId: d.attackId ?? 0,
     // 咒愈师 skills whose damage triggers their trait for ONE named ally ("并仅对该角色/干员触发…特性"): the instance
     // carries that ally, and the trait hook (professions.js installIncantation) heals it instead of the lowest-HP ally
@@ -181,7 +183,7 @@ export function leaderHitCancelled(battle, target, amount) {
 }
 
 /** Absorb damage with shields on `target`. Returns the remaining amount. */
-export function absorbShields(battle, target, amount) {
+export function absorbShields(battle, target, amount, pierceBarrier = false) {
   if (amount <= 0) return 0;
   let changed = false;
   let rest = amount;
@@ -189,7 +191,7 @@ export function absorbShields(battle, target, amount) {
     const b = target.buffs[i];
     if (b.shieldHits > 0) {
       b.shieldHits--;
-      rest = 0;
+      if (!pierceBarrier) rest = 0;
       if (b.shieldHits <= 0 && !(b.shield > 0) && !b.mods && !b.flags) { battle._removeBuffAt(target, i); i--; }
       changed = true;
       break;
@@ -247,7 +249,7 @@ export function dealDamage(battle, source, target, dmgIn) {
   // recognise their own (tagged) damage — never re-create such a loss with a fresh loseHp.
   if (ts.flags.hitCount || ts.flags.hitCountArts) {
     const counts = !(ts.flags.hitCountArts && !ts.flags.hitCount && type === 'phys');
-    return applyHpLoss(battle, source, target, absorbShields(battle, target, counts ? 1 : 0), dmg);
+    return applyHpLoss(battle, source, target, absorbShields(battle, target, counts ? 1 : 0, dmg.pierceBarrier), dmg);
   }
   // 无来源 damage (element bursts) takes nothing from its source's stats; the source still gets the credit below
   const ss = source && source.s && !dmg.sourceless ? source.s : null;
@@ -267,7 +269,7 @@ export function dealDamage(battle, source, target, dmgIn) {
   // 限伤: a leader's hit of ≥ BOSS_HIT_LIMIT in a boss / hidden battle is cancelled before it reaches shields / HP — what
   // ran before it (the attack, its SP, `hit` hook effects, separate element 损伤) stays; nothing after it happens
   if (final > 0 && leaderHitCancelled(battle, target, final)) return 0;
-  final = absorbShields(battle, target, final);
+  final = absorbShields(battle, target, final, dmg.pierceBarrier);
   return applyHpLoss(battle, source, target, final, dmg);
 }
 

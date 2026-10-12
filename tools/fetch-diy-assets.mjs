@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import https from 'node:https';
 import http from 'node:http';
@@ -17,7 +18,8 @@ fs.mkdirSync(SPINE_DIR, { recursive: true });
 
 const backups = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'backups.json'), 'utf8'));
 const assets = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'assets.json'), 'utf8'));
-const pool = backups.diy?.ownedPool || [];
+const requested = process.argv.slice(2);
+const pool = (backups.diy?.ownedPool || []).filter(id => !requested.length || requested.includes(id));
 
 function downloadBuffer(url, timeoutMs = 8000) {
   return new Promise((resolve) => {
@@ -87,6 +89,9 @@ async function downloadSkills() {
       const targetFile2 = path.join(SKILL_DIR, `${sk.skillId}.png`);
 
       const urls = [
+        `https://raw.githubusercontent.com/fexli/ArknightsResource/main/skills/skill_icon_${encodeURIComponent(sk.iconId)}.png`,
+        `https://raw.githubusercontent.com/fexli/ArknightsResource/main/skill/skill_icon_${encodeURIComponent(sk.iconId)}.png`,
+        `https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/skill/skill_icon_${encodeURIComponent(sk.iconId)}.png`,
         `https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/skill/${encodeURIComponent(sk.iconId)}.png`,
         `https://cdn.jsdelivr.net/gh/yuanyan3060/ArknightsGameResource@main/skill/${encodeURIComponent(sk.iconId)}.png`,
         `https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/skill/${encodeURIComponent(sk.skillId)}.png`,
@@ -277,15 +282,48 @@ async function updateAssetsJson() {
     }
   }
 
+  // Asset paths are cached for a day: change the URL when a corrected portrait replaces old art.
+  for (const id of pool) for (const [key, suffix] of [['portrait', '_1'], ['portraitE2', '_2']]) {
+    const file = path.join(PUBLIC, 'assets/char/portrait', `${id}${suffix}.png`);
+    if (!assets.chars[id] || !fs.existsSync(file)) continue;
+    const rev = createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 12);
+    assets.chars[id][key] = `/assets/char/portrait/${id}${suffix}.png?rev=${rev}`;
+  }
   fs.writeFileSync(path.join(ROOT, 'data', 'assets.json'), JSON.stringify(assets, null, 2), 'utf8');
   console.log('assets.json successfully updated!');
 }
 
 async function main() {
+  for (const id of pool) {
+    const name = backups.units[id].name;
+    const images = [['avatar', '', `头像_${name}.png`], ['avatar', '_2', `头像_${name}_2.png`]];
+    // Portrait cards are client crops (180x360), not PRTS full illustrations.
+    for (const suffix of ['_1', '_2']) {
+      const dest = path.join(PUBLIC, 'assets/char/portrait', `${id}${suffix}.png`);
+      const size = fs.existsSync(dest) ? pngSize(fs.readFileSync(dest)) : null;
+      if (size?.width === 180 && size?.height === 360) continue;
+      const buf = await downloadBuffer(`https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/portrait/${id}${suffix}.png`);
+      const downloaded = pngSize(buf);
+      if (downloaded?.width !== 180 || downloaded?.height !== 360) throw new Error(`Missing 180x360 portrait: ${id}${suffix}`);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, buf);
+    }
+    const missing = images.filter(([kind, suffix]) => !fs.existsSync(path.join(PUBLIC, 'assets', 'char', kind, `${id}${suffix}.png`)));
+    if (missing.length) {
+      const params = new URLSearchParams({ action: 'query', titles: missing.map(x => '文件:' + x[2]).join('|'), prop: 'imageinfo', iiprop: 'url', format: 'json' });
+      const response = await downloadBuffer(`https://prts.wiki/api.php?${params}`);
+      const pages = response ? Object.values(JSON.parse(response.toString()).query?.pages || {}) : [];
+      for (const [kind, suffix, title] of missing) {
+        const url = pages.find(p => p.title === '文件:' + title.replaceAll('_', ' '))?.imageinfo?.[0]?.url;
+        if (!url || !await downloadWithFallbacks([url], path.join(PUBLIC, 'assets', 'char', kind, `${id}${suffix}.png`)))
+          throw new Error(`Missing operator image: ${title}`);
+      }
+    }
+  }
   await downloadSkills();
   await downloadSpines();
   await updateAssetsJson();
   console.log('\nAll assets pipeline finished successfully!');
 }
 
-main().catch(console.error);
+main().catch(error => { console.error(error); process.exitCode = 1; });

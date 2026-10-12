@@ -435,7 +435,7 @@ describe('net.js', () => {
     assert.ok(ws().last('ping'), 'latency probe before hello');
     net.setName('  凯尔希  ');
     const hello = ws().last('hello');
-    assert.deepEqual({ ...hello, rid: 0 }, { t: 'hello', rid: 0, name: '凯尔希', version: PROTOCOL_VERSION, token: 'tok-1' });
+    assert.deepEqual({ ...hello, rid: 0 }, { t: 'hello', rid: 0, name: '凯尔希', version: PROTOCOL_VERSION, client: { platform: 'web', bundle: 'stream' }, token: 'tok-1' });
     assert.equal(net.status, 'handshaking');
     ws().recv({ t: 'welcome', rid: hello.rid, playerId: 'p_1', token: 't', name: '凯尔希', serverNow: Date.now() });
     assert.equal(net.status, 'online');
@@ -472,7 +472,7 @@ describe('net.js', () => {
   test('invalid request fails locally with BAD_MSG; hello via request is refused', async () => {
     const { net, ws } = await onlineNet();
     const before = ws().sent.length;
-    await quiet(() => assert.rejects(net.request('room.create', { mode: 'pvp', difficulty: 'HARD' }), (e) => e.code === 'BAD_MSG'));
+    await quiet(() => assert.rejects(net.request('room.create', { mode: 'invalid-mode', difficulty: 'HARD' }), (e) => e.code === 'BAD_MSG'));
     await assert.rejects(net.request('hello', { name: 'x' }), (e) => e.code === 'BAD_MSG');
     await quiet(() => assert.rejects(net.request('nope', {}), (e) => e.code === 'BAD_MSG'));
     assert.equal(ws().sent.length, before, 'nothing sent');
@@ -506,11 +506,12 @@ describe('net.js', () => {
     await p;
   });
 
-  test('drop → pending rejects, reconnect with backoff, hello again', async () => {
+  test('drop → pending request replays after reconnect with the same request ID', async () => {
     const { net, ws, sockets, timers } = await onlineNet();
     const p = net.request('room.leave', {});
+    const rid = ws().last('room.leave').rid;
     ws().drop();
-    await assert.rejects(p, (e) => e.code === 'DISCONNECTED');
+    assert.equal(net.pendingCount, 1, 'recoverable disconnect retains the in-flight request');
     assert.equal(net.status, 'reconnecting');
     assert.equal(net.attempt, 1);
     assert.equal(sockets.length, 1);
@@ -527,6 +528,10 @@ describe('net.js', () => {
     ws().recv({ t: 'welcome', rid: ws().last('hello').rid, playerId: 'p_1', token: 't', name: '凯尔希', serverNow: 1 });
     assert.equal(net.attempt, 0);
     assert.equal(net.status, 'online');
+    assert.equal(ws().last('room.leave').rid, rid);
+    ws().recv({ t: 'ok', rid });
+    await p;
+    assert.equal(net.pendingCount, 0);
   });
 
   test('pong gives latency and clock offset', async () => {
@@ -1057,14 +1062,14 @@ describe('screen helpers', () => {
         { seat: 3, playerId: 'ai_1', name: 'AI·华法琳', isBot: true, ready: true, connected: true },
       ],
     };
-    assert.equal(normalizeSeats(room).length, 4);
+    assert.equal(normalizeSeats(room).length, 6);
     assert.equal(normalizeSeats({ mode: 'solo', seats: [room.seats[0], null, null, null] }).length, 1);
-    assert.deepEqual(normalizeSeats({ mode: 'coop', seats: 'bad' }), [null, null, null, null]);
+    assert.deepEqual(normalizeSeats({ mode: 'coop', seats: 'bad' }), Array(6).fill(null));
     let f = roomFacts(room, 'h');
     assert.equal(f.isHost, true);
     assert.equal(f.canStart, false, 'guest not ready');
     assert.equal(f.humans.length, 2);
-    assert.equal(f.emptySeats, 1);
+    assert.equal(f.emptySeats, 3);
     assert.equal(f.readyHumans, 1, 'host counts as ready (start = host ready)');
     room.seats[1].ready = true;
     f = roomFacts(room, 'h');
@@ -1093,7 +1098,7 @@ describe('screen helpers', () => {
     assert.equal(f.spectating, true);
     assert.equal(f.mine, null);
     assert.equal(f.humans.length, 1, 'never a player');
-    assert.equal(f.emptySeats, 3, 'a free player seat stays free (入座)');
+    assert.equal(f.emptySeats, 5, 'a free player seat stays free (入座)');
     assert.deepEqual(f.spectators.map((x) => x.playerId), ['s']);
     const hf = roomFacts(room, 'h');
     assert.equal(hf.canStart, true, 'a spectator never blocks the start');

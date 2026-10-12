@@ -76,7 +76,7 @@ function parseArgs(argv) {
 
 let OPTS;
 try {
-  OPTS = parseArgs(process.argv.slice(2));
+  OPTS = parseArgs(process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) ? process.argv.slice(2) : []);
 } catch (e) {
   console.error(`build-data: ${e.message}`);
   process.exit(2);
@@ -3302,7 +3302,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
+export { interpolateAttrs, statsFrom, immunitiesOf, rangeGrid, traitRecord, buildSkill, resolveTrigger,
+  baseTalentList, mergeTalentChanges, splitModuleParts, bestCandidate, moduleAttr, moduleTalentChanges };
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => {
   console.error('build-data failed:', e && e.stack ? e.stack : e);
   process.exitCode = 1;
 });

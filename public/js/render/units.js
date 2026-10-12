@@ -210,6 +210,17 @@ const dollRoles = (idle, die, attack = null) => Object.freeze({
   idle, deploy: idle, die, attack: attack ? Object.freeze({ begin: null, loop: attack, end: null }) : null, attackDown: null, skill: null,
 });
 export const FORMS = Object.freeze({
+  char_4217_makoto: Object.freeze({
+    'makoto-s1': Object.freeze({ change: 'Doll_Skill_1_SwitchIn', roles: dollRoles('Doll_Skill_1_Idle', 'Doll_Skill_1_Die', 'Doll_Skill_1_Attack') }),
+    'makoto-s2': Object.freeze({ change: 'Doll_Skill_2_SwitchIn', roles: dollRoles('Doll_Skill_2_Loop', 'Doll_Skill_2_Die') }),
+    'makoto-s3': Object.freeze({ change: 'Doll_Skill_3_P1_SwitchIn', roles: dollRoles('Doll_Skill_3_P1_Idle', 'Doll_Skill_2_Die', 'Doll_Skill_3_P1_Attack_A') }),
+    'makoto-heal': Object.freeze({ change: 'Doll_Skill_3_P1toP2_ChangeEnd', roles: dollRoles('Doll_Skill_3_P2_Loop', 'Doll_Skill_3_P2_Die') }),
+    'makoto-total': Object.freeze({ change: 'Skill_AllOutAttack_End', roles: dollRoles('Idle', 'Doll_Skill_1_Die') }),
+  }),
+  char_4182_oblvns: Object.freeze({
+    'sakiko-piano': Object.freeze({ change: 'Skill_2_Trans_A', roles: dollRoles('Skill_2_Idle_A', 'Die', 'Skill_2_Loop_A') }),
+    'sakiko-organ': Object.freeze({ change: 'Skill_2_Trans_B', roles: dollRoles('Skill_2_Idle_B', 'Die', 'Skill_2_Loop_B') }),
+  }),
   char_1023_ghost2: Object.freeze({
     doll: Object.freeze({ change: 'Start_B', end: 'Die_B', leave: 'Start_2', roles: dollRoles('Idle_B', 'Die_B_2') }),
   }),
@@ -571,6 +582,8 @@ export class UnitView {
     this.shieldBar = bar(P, h, COLORS.shield, 0.95);
     this.spBg = bar(P, h, COLORS.hpBack, 0.85);
     this.spFill = bar(P, h, COLORS.sp);
+    this.feverFill = bar(P, h, 0xef47ae);
+    this.feverFill.visible = false;
     this.spGlow = new P.Sprite(fxAtlas().tex.glow);
     this.spGlow.anchor.set(0.5);
     this.spGlow.tint = COLORS.spReady;
@@ -656,6 +669,7 @@ export class UnitView {
     if (hp < this.hp - 0.5 && this.isBoss) this.shake = 0.25;
     this.hp = hp;
     this.sp = s.sp; this.spMax = s.spMax;
+    this.fever = s.fever; this.feverTime = s.feverTime || 0;
     const prevFlags = this.flags;
     this.flags = s.flags | 0;
     this.anim = s.anim | 0;
@@ -1086,16 +1100,22 @@ export class UnitView {
     const spH = Math.max(2, bh * 0.6);
     let ready = false;
     if (showSp) {
-      const active = !!(this.flags & UF.SKILL);
+      const active = !!(this.flags & UF.SKILL) || this.form === 'doll';
       const k = clamp(this.sp / this.spMax, 0, 1);
       ready = !active && k >= 0.999;
       const sy = cy + bh / 2 + spH / 2 + 1.5;
       this.spBg.position.set(x0 - 1, sy); this.spBg.width = bw + 2; this.spBg.height = spH + 2;
       this.spFill.position.set(x0, sy); this.spFill.width = bw * k; this.spFill.height = spH;
-      this.spFill.tint = active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
+      this.spFill.tint = this.feverTime > 0 ? 0xef47ae : active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
       this._spY = sy;
     }
     this.spGlow.visible = ready;
+    this.feverFill.visible = showBars && this.fever != null;
+    if (this.feverFill.visible) {
+      this.feverFill.position.set(x0, cy + bh / 2 + spH * 2 + 4);
+      this.feverFill.width = bw * (this.feverTime > 0 ? this.feverTime / 20 : this.fever / 450);
+      this.feverFill.height = spH;
+    }
     if (ready) {
       const pulse = 0.55 + 0.35 * Math.sin(t * 6);
       this.spGlow.position.set(x0 + bw, this._spY);

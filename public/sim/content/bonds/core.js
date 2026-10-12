@@ -480,9 +480,10 @@ function installEgir(battle, pid, bb, members) {
     if (c.reason !== 'killed' || !memberOps.has(u) || knockedOut.has(u)) return;
     knockedOut.add(u);
     if (revives >= max || u.alive || u.removed) return;
-    if (!battle.redeploy(u, { free: true })) return;
-    revives++;
-    S.fxOn(battle, 'revive', u, 'bond:egirShip', 'respawn', { n: revives });
+    // Reserve before deploy callbacks so nested deaths cannot exceed the pool.
+    const n = ++revives;
+    if (!battle.redeploy(u, { free: true })) { revives--; return; }
+    S.fxOn(battle, 'revive', u, 'bond:egirShip', 'respawn', { n });
   }, { priority: 11 });
 }
 
