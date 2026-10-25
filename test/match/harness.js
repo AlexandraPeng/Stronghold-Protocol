@@ -7,7 +7,11 @@
 // seed, matchNo (the room's match number: part of the battleId prefix), data (default: real data/*.json),
 // fake (true → test/match/fakeBattle.js as BattleClass), script (FakeBattle.script), registry, instant (virtual
 // scheduler runs battles synchronously; default true), timerScale, battleContent, botRehearsal (default 0),
-// botSliceMs (bot rehearsal slice budget; default: unbounded in virtual time).
+// botSliceMs (bot rehearsal slice budget; default: unbounded in virtual time), aiPicksLast (the room option
+// AI 队友最后选择: the drafts order every human seat before every AI seat), test (DESIGN §34.8; hostId then
+// defaults to the first human), hostId / botRehearsalDelegate /
+// botRehearsalDelegateMs (the delegated bot rehearsal, DESIGN §14: test/match/rehearsal-delegate.test.js),
+// cs / vs / requireCs (a gameplay-plugin room: host rehearsal stays off), rules (DESIGN §34.15; omitted unless set).
 // Combat mode: clientCombat (default false here: the legacy server-run mode most suites were written for; production
 // defaults to client-side combat, DESIGN §14). With clientCombat: true every human gets a scripted browser
 // (test/match/simClient.js SimClient: h.clients) unless clients: false; pace 'instant' | 'paced', perPlayer
@@ -25,6 +29,7 @@ import { FakeBattle } from './fakeBattle.js';
 import { GEO } from '../../shared/constants.js';
 import { collectViolations } from '../../server/match/invariants.js';
 import { attachSimClients } from './simClient.js';
+import { morphSlotPolicy, ruleOption } from '../../shared/plugins/rules.js';
 
 export const DATA = getData({ log: { warn() {}, error() {}, info() {} } });
 
@@ -41,7 +46,7 @@ export function makeMatch(o = {}) {
   }
   const sched = new VirtualScheduler({ instantCombat: o.instant !== false });
   const logs = { error: [], warn: [] };
-  const log = { info() {}, debug() {}, warn: (...a) => logs.warn.push(a.map(String).join(' ')), error: (...a) => logs.error.push(a.map(String).join(' ')) };
+  const log = { info: (...a) => o.log?.info?.(...a), debug() {}, warn: (...a) => logs.warn.push(a.map(String).join(' ')), error: (...a) => logs.error.push(a.map(String).join(' ')) };
   const h = { sent: [], bc: [], ended: null, endedCount: 0, logs, sched, frames: 0, badFrames: [], onSend: [], onBroadcast: [], clients: null };
   const captureFrames = o.captureFrames !== false;
   const checkFrame = (msg) => {
@@ -55,7 +60,8 @@ export function makeMatch(o = {}) {
     if (o.script) FakeBattle.script = o.script;
   }
   h.m = new Match({
-    roomCode: 'TEST', mode, difficulty, uniteStacking: o.uniteStacking, seats, spectators: o.spectators, seed: o.seed ?? 1, matchNo: o.matchNo, data: o.data ?? DATA, log,
+    uniteStacking: o.uniteStacking,
+    roomCode: 'TEST', mode, difficulty, seats, spectators: o.spectators, seed: o.seed ?? 1, matchNo: o.matchNo, data: o.data ?? DATA, log,
     send: (id, msg) => {
       for (const fn of h.onSend) fn(id, msg);
       if (msg.t === 'b.snap' || msg.t === 'b.ev') { h.frames++; if (!captureFrames) return true; }
@@ -67,6 +73,7 @@ export function makeMatch(o = {}) {
     onEnd: (s) => { h.ended = s; h.endedCount++; },
     scheduler: sched,
     registry: o.registry,
+    offers: o.offers,
     BattleClass: o.fake ? FakeBattle : undefined,
     battleContent: o.battleContent,
     timerScale: o.timerScale,
@@ -77,6 +84,21 @@ export function makeMatch(o = {}) {
     clientCombat: o.clientCombat ?? false,
     verify: o.verify ?? 'off',
     headlessSliceMs: o.headlessSliceMs,
+    aiPicksLast: o.aiPicksLast,
+    // a bot prep's layout rehearsal delegated to the room's host (DESIGN §14; test/match/rehearsal-delegate.test.js):
+    // `hostId` is the executor a task is sent to, `botRehearsalDelegateMs` its answer window
+    hostId: o.hostId !== undefined ? o.hostId : (o.test === true ? (seats.find((s) => s && !s.isBot)?.playerId ?? null) : undefined),
+    test: o.test === true,
+    botRehearsalDelegate: o.botRehearsalDelegate,
+    botRehearsalDelegateMs: o.botRehearsalDelegateMs,
+    // a gameplay-plugin room (DESIGN §32.6): host rehearsal stays off there (match/rehearsal.js requireCs)
+    cs: o.cs,
+    vs: o.vs,
+    requireCs: o.requireCs,
+    // a modded room's 自选 list (Match.diyKitted). Omitted unless the test passes one, so a vanilla harness match
+    // still has no kitted key.
+    ...(o.kitted !== undefined ? { kitted: o.kitted } : {}),
+    ...(o.rules !== undefined ? { rules: o.rules } : {}),
   });
   const m = h.m;
   if (m.clientCombat && o.clients !== false) {
@@ -122,6 +144,7 @@ export function makeMatch(o = {}) {
           if (idx != null) m.handle(ps.playerId, { t: 'g.choice', idx });
         }
         if (ready && m.phase === 'PREP' && ps.alive && !ps.ready) {
+          if (ps.personalChoice) m.handle(ps.playerId, { t: 'g.choice', idx: 0, choiceId: ps.personalChoice.id });
           if (!ps.tempEmpty) ps.resolveTemp();
           m.handle(ps.playerId, { t: 'g.ready', ready: true });
         }
@@ -160,8 +183,9 @@ function legacyInvariants(m) {
   for (const ps of m.players.values()) {
     assert.ok(Number.isInteger(ps.funds) && ps.funds >= 0, `${ps.playerId} funds ${ps.funds}`);
     assert.ok(Number.isInteger(ps.pendingFunds) && ps.pendingFunds >= 0, `${ps.playerId} pending ${ps.pendingFunds}`);
-    assert.equal(ps.hand.length, GEO.HAND_SIZE);
+    assert.equal(ps.hand.length, m.uniteStacking ? GEO.HAND_SIZE * 2 : GEO.HAND_SIZE);
     assert.equal(ps.temp.length, GEO.TEMP_SIZE);
+    assert.ok(ps.temp.length >= GEO.TEMP_SIZE, 'temp retains five visible slots and may have queued overflow');
     assert.ok(ps.shop.level >= 1 && ps.shop.level <= m.gd.maxShopLevel);
     assert.ok(ps.shop.upgradePrice >= 0);
     assert.ok(ps.shop.freeRefreshes >= 0);
@@ -193,7 +217,8 @@ function legacyInvariants(m) {
       if (p.kind === 'chess') {
         const rec = m.gd.chess(p.id);
         assert.ok(rec, `unknown chess ${p.id}`);
-        assert.ok(Array.isArray(p.items) && p.items.length <= m.gd.equipPerChess, `${p.id} carries ${p.items && p.items.length} items`);
+        const slots = morphSlotPolicy(ruleOption(m.rules, 'morphPairing'), (it) => !!ps.gd.item(it?.id)?.canGiveBond);
+        assert.ok(Array.isArray(p.items) && slots.slotsUsed(p.items) <= slots.slotCap(m.gd.equipPerChess), `${p.id} carries ${p.items && p.items.length} items`);
         for (const it of p.items) { note(it); assert.equal(it.kind, 'item'); assert.ok(m.gd.item(it.id), `unknown item ${it.id}`); }
         assert.ok(Number.isInteger(p.poolCopies) && p.poolCopies >= 0);
         const base = m.gd.baseIdOf(p.id);
@@ -219,7 +244,8 @@ function legacyInvariants(m) {
     }
   }
   for (const [base, e] of pool.entries) {
-    assert.ok(e.left >= 0 && e.left <= e.cap, `pool ${base} left ${e.left} cap ${e.cap}`);
+    assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `pool ${base} balance ${e.left} cap ${e.cap}`);
+    assert.equal(pool.left(base), Math.max(0, e.left), 'overdrawn ownership never becomes a negative shop supply');
     assert.equal(e.left + (held.get(base) || 0), e.cap, `pool accounting ${base}: left ${e.left} + held ${held.get(base) || 0} != cap ${e.cap}`);
   }
   for (const [base, n] of held) if (!pool.has(base)) assert.equal(n, 0, `non-pool chess ${base} holds copies`);

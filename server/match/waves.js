@@ -1,3 +1,5 @@
+const tunedRoutes = (gd, tpl) => (tpl.routes || []).map((r,i)=>gd.uniteExpansion && UNITE_TUNING.routes?.[tpl.id]?.[i] ? {...r,...UNITE_TUNING.routes[tpl.id][i]} : r);
+import { UNITE_TUNING } from '../../shared/uniteTuning.js';
 // server/match/waves.js — per-match enemy setup and per-round spawn generation: the OFFICIAL generator decoded from
 // the client (`RandomEnemyGenerater`, research 08 §2; DESIGN §14 "Corrections from research 08/09"). No custom balance:
 // counts, kinds, timing and stat scaling are the official ones.
@@ -36,6 +38,9 @@
 // largest owner group (client `_CalculateActionPredelayConsiderUid`, decoded).
 
 import { createRng, deriveSeed } from '../sim/rng.js';
+import { uniteEntries } from './uniteExpansion.js';
+import { UNITE_MIN_ROUND, UNITE_MAX_ACTION_COUNT } from '../../shared/uniteWaveDesign.js';
+import { PLUGIN_ACTION_UNITS } from '../../shared/plugins/limits.js';
 
 const ACLOON = 'enemy_9012_acloon';
 const DEFAULT_PLACEHOLDERS = Object.freeze({
@@ -43,6 +48,9 @@ const DEFAULT_PLACEHOLDERS = Object.freeze({
   NF: { cls: 'normal', fly: true }, EF: { cls: 'elite', fly: true }, SF: { cls: 'special', fly: true },
 });
 const MIN_ACTION_INTERVAL_RATIO = 0.05;
+/** The most units one wave action fields (templateSpawns' count clamp; replacedCount and bountyPlan stay within it) — the
+ * data-plugin check caps the replaced counts at the same number (shared/plugins/limits.js). */
+const MAX_ACTION_UNITS = PLUGIN_ACTION_UNITS;
 /** 联防 timing (client `_CalculateActionPredelayConsiderUid`): owner offset ACTION_INTERVAL_FOR_UID, unit step cap
  * MAX_ACTION_INTERVAL_FOR_UID. */
 const UNITE_OWNER_STEP = 0.5;
@@ -102,8 +110,11 @@ const beFactor = (gd, key) => {
  */
 export function replacedCount(gd, tplKey, n, newKey) {
   const g = gen(gd);
-  const min = Number.isInteger(g.minReplacedEnemyCount) ? g.minReplacedEnemyCount : 1;
-  const max = Number.isInteger(g.maxReplacedEnemyCount) ? g.maxReplacedEnemyCount : 5;
+  // (bounded like a template action's own count — templateSpawns' 1–50: a data plugin's 4e7 would be one action's units,
+  // and an array of them in bountyPlan; the official 1 / 5 are unchanged)
+  const min = Math.max(1, Math.min(MAX_ACTION_UNITS, Number.isInteger(g.minReplacedEnemyCount) ? g.minReplacedEnemyCount : 1));
+  const defaultMax = Math.max(1, Math.min(MAX_ACTION_UNITS, Number.isInteger(g.maxReplacedEnemyCount) ? g.maxReplacedEnemyCount : 5));
+  const max = gd.uniteExpansion ? Math.min(defaultMax, UNITE_MAX_ACTION_COUNT[newKey] ?? defaultMax) : defaultMax;
   const f = Math.fround;
   const origin = f(f(n * attrPower(gd, tplKey)) / beFactor(gd, tplKey));
   const unit = f(attrPower(gd, newKey) / beFactor(gd, newKey));
@@ -139,6 +150,7 @@ export function pickRoundEntry(gd, rng, type, round) {
   const half = round <= firstHalfMax(gd);
   const ok = (e) => e.type === type && !!e.firstHalf === half && e.key !== ACLOON && !!gd.enemy(e.key) && !gd.inactiveEnemies.has(e.key);
   let cands = entryList(gd).filter(ok);
+  cands.push(...uniteEntries(gd, type, half, round));
   if (!cands.length && type !== 'SPECIAL') return pickRoundEntry(gd, rng, 'SPECIAL', round);
   if (!cands.length) return null;
   const idx = weightedPick(rng, cands.map((e, i) => [i, e.weight ?? 1]));
@@ -147,13 +159,14 @@ export function pickRoundEntry(gd, rng, type, round) {
     const keys = (Array.isArray(list) ? list : []).map((x) => (typeof x === 'string' ? x : x && x.key)).filter((k) => typeof k === 'string' && gd.enemy(k) && k !== ACLOON);
     return keys.length ? keys[Math.floor(rng() * keys.length)] : null;
   };
-  return { round, type: e.type, key: e.key, normal: pickKey(e.N), elite: pickKey(e.E), fly: typeof e.fly === 'boolean' ? e.fly : isFlyKey(gd, e.key), firstHalf: half };
+  return { round, type: e.type, key: e.key, normal: pickKey(e.N), elite: pickKey(e.E), fly: typeof e.fly === 'boolean' ? e.fly : isFlyKey(gd, e.key), firstHalf: half,
+    ...(e.uniteKeys ? { uniteKeys: rng.shuffle([...e.uniteKeys]), uniteGroup: e.uniteGroup } : {}) };
 }
 
 /** Round type schedule: each chosen type × its slot count, filled with SPECIAL to maxLevelCnt, shuffled. */
 export function makeTypeSchedule(gd, rng, factions) {
   const g = gen(gd);
-  const max = intOr(g.maxLevelCnt, 15);
+  const max = Math.min(256, Math.max(0, intOr(g.maxLevelCnt, 15))); // loop-cap: schedule length [ASSUMED] DESIGN §32.5
   const fill = typeof g.fillType === 'string' ? g.fillType : (typeof g.alwaysIncludedType === 'string' ? g.alwaysIncludedType : 'SPECIAL');
   const types = gd.factions.types && typeof gd.factions.types === 'object' ? gd.factions.types : {};
   const slots = [];
@@ -161,7 +174,7 @@ export function makeTypeSchedule(gd, rng, factions) {
     const n = intOr(types[t]?.count, 3);
     for (let i = 0; i < n && slots.length < max; i++) slots.push(t);
   }
-  while (slots.length < max) slots.push(fill);
+  while (slots.length < max) slots.push(fill); // loop-cap: schedule length
   rng.shuffle(slots);
   return slots;
 }
@@ -234,6 +247,13 @@ export function scaleFor(gd, r) {
   return gd.enemyScale(r);
 }
 
+/** The spawn mods of a round's scale for a non-leader enemy: HP / ATK / speed, plus `supplyHpMul` when the round has one. */
+export function roundMods(scale) {
+  const m = { hpMul: scale.hpMul, atkMul: scale.atkMul, speedMul: scale.speedMul };
+  if (scale.supplyHpMul != null) m.supplyHpMul = scale.supplyHpMul;
+  return m;
+}
+
 /** Slot class of an enemy that has no placeholder slot (literal template keys, bounty adds). */
 export function classOf(gd, enemyKey) {
   const e = gd.enemy(enemyKey);
@@ -282,13 +302,18 @@ function previewInfo(gd, key, route, boss = false, leader = undefined) {
 function templateSpawns(gd, tpl, round, pick) {
   const scale = scaleFor(gd, round);
   const ph = placeholderMap(gd);
-  const routes = Array.isArray(tpl.routes) ? tpl.routes : [];
+  const routes = tunedRoutes(gd, tpl);
   const leader = isLeaderTemplate(tpl);
   const spawns = [];
   const actions = [];
+  const uniteSlots = { ground: 0, fly: 0, all: 0 };
+  const biomeKeys = gd.uniteExpansion && pick ? [...new Set(pick.uniteKeys || [pick.normal,pick.elite,pick.key])]
+    .filter(k=>k && k!==ACLOON && gd.enemy(k) && round >= (UNITE_MIN_ROUND[k] || 1)) : [];
   const list = Array.isArray(tpl.spawns) ? tpl.spawns : [];
   for (let i = 0; i < list.length; i++) {
-    const s = list[i];
+    const original = list[i];
+    const override = gd.uniteExpansion ? UNITE_TUNING.templates[tpl.id]?.[i] : null;
+    const s = override && original && !original.tag && !original.unharmful ? {...original, ...override} : original;
     if (!s || (s.action && String(s.action).toUpperCase() !== 'SPAWN')) continue;
     const key0 = s.key ?? s.enemyKey;
     if (typeof key0 !== 'string' || key0 === ACLOON) continue;
@@ -298,16 +323,35 @@ function templateSpawns(gd, tpl, round, pick) {
     const n = Math.max(1, Math.min(50, Number.isInteger(s.count) ? s.count : 1));
     const interval = Math.max(0, Number(s.interval) || 0);
     const time = Math.max(0, Number(s.time) || 0);
-    const routeIndex = Number.isInteger(s.routeIndex) ? s.routeIndex : 0;
+    let routeIndex = Number.isInteger(s.routeIndex) ? s.routeIndex : 0;
     const window = n * interval;
     let key = key0;
     let count = n;
     let step = interval;
     const p = !isBoss && !isPart ? ph[key0] : null;
-    if (p && pick) {
-      const newKey = p.cls === 'special' ? pick.key : p.cls === 'elite' ? pick.elite : pick.normal;
-      if (typeof newKey === 'string' && gd.enemy(newKey)) {
-        if (isFlyKey(gd, newKey) !== !!p.fly) {
+    if (biomeKeys.length && !isBoss && !isPart && !s.unharmful) {
+      // One selected biome supplies every regular slot, including literal R1 enemies.
+      // Apply the original battle-effectiveness budget and movement filtering. Filling both
+      // WALK and FLY alternatives inflated waves, especially when the chosen group was durable.
+      const matching=biomeKeys.filter(k=>isFlyKey(gd,k)===(routes[routeIndex]?.motion==='FLY'));
+      if (!matching.length) {
+        actions.push({ index: i, key: null, tplKey: key0, slot: p?.slot ?? s.slot ?? null, time, count: 0, tplCount: n, window, routeIndex, valid: false, server: false });
+        continue;
+      }
+      const candidates=matching;
+      const preferred=p && !pick.uniteKeys ? (p.cls==='special'?pick.key:p.cls==='elite'?pick.elite:pick.normal) : null;
+      key=candidates.includes(preferred)?preferred:candidates[uniteSlots.all++%candidates.length];
+      count=replacedCount(gd,key0,n,key);
+      step=Math.max(window/count,MIN_ACTION_INTERVAL_RATIO*window);
+    } else if (p && pick) {
+      const matching = pick.uniteKeys?.filter(k => isFlyKey(gd, k) === !!p.fly);
+      const newKey = matching ? matching[uniteSlots[p.fly ? 'fly' : 'ground']++ % matching.length] : p.cls === 'special' ? pick.key : p.cls === 'elite' ? pick.elite : pick.normal;
+      if (matching && !matching.length && !gd.uniteExpansion) {
+        actions.push({ index: i, key: null, tplKey: key0, slot: p.slot ?? s.slot ?? null, time, count: 0, tplCount: n, window, routeIndex, valid: false, server: false });
+        continue;
+      }
+      if (typeof newKey === 'string' && gd.enemy(newKey) && (!gd.uniteExpansion || isFlyKey(gd,newKey)===!!p.fly)) {
+        if (isFlyKey(gd, newKey) !== !!p.fly && !gd.uniteExpansion) {
           // the other movement class: not spawned, not sent, not previewed (isValid = false)
           actions.push({ index: i, key: null, tplKey: key0, slot: p.slot ?? s.slot ?? null, time, count: 0, tplCount: n, window, routeIndex, valid: false, server: false });
           continue;
@@ -327,8 +371,9 @@ function templateSpawns(gd, tpl, round, pick) {
       interval: count > 1 ? step : 0,
       // the round multipliers are ENEMY effects on every enemy but 炎佑 (aceffect_enemy_1–5 `enemy_attribute_mul`,
       // enemy_exclude = enemy_9012_acloon): leader parts take them all; the leader takes ATK / speed but not HP — its HP
-      // is the server pool, "领袖单位于服务器的生命值加成不受上述加成影响" (PRTS 下半)
-      mods: isBoss ? { atkMul: scale.atkMul, speedMul: scale.speedMul, slot } : { hpMul: scale.hpMul, atkMul: scale.atkMul, speedMul: scale.speedMul, slot },
+      // is the server pool, "领袖单位于服务器的生命值加成不受上述加成影响" (PRTS 下半). `supplyHpMul` (roundMods) rides along for
+      // the 器物 hit-count units, which 补给线 / 补给线II leave out (archetypes.js `times`; also a 频次 enemy's death spawn)
+      mods: isBoss ? { atkMul: scale.atkMul, speedMul: scale.speedMul, slot } : { ...roundMods(scale), slot },
       actionIndex: i,
       preview: previewInfo(gd, key, routes[routeIndex], isBoss, leader),
     };
@@ -367,7 +412,7 @@ export function buildNormalWave(gd, rng, factions, round) {
   return {
     templateId,
     spawns,
-    routes: Array.isArray(tpl.routes) ? tpl.routes : [],
+    routes: tunedRoutes(gd, tpl),
     extraRoutes: Array.isArray(tpl.extraRoutes) ? tpl.extraRoutes : [],
     timeLimit,
     overrides: tpl.overrides && typeof tpl.overrides === 'object' ? tpl.overrides : {},
@@ -398,7 +443,7 @@ export function buildBossWave(gd, rng, factions, round, { bossId, solo }) {
   return {
     templateId,
     spawns,
-    routes: Array.isArray(tpl.routes) ? tpl.routes : [],
+    routes: tunedRoutes(gd, tpl),
     extraRoutes: Array.isArray(tpl.extraRoutes) ? tpl.extraRoutes : [],
     timeLimit: Infinity,
     overrides: tpl.overrides && typeof tpl.overrides === 'object' ? tpl.overrides : {},
@@ -437,7 +482,9 @@ function hostAction(gd, wave, { fly, token = false }) {
   const want = token ? ts[fly ? 'TF' : 'T'] : ts[fly ? 'NF' : 'N'];
   let first = -1;
   for (let i = 0; i < list.length; i++) {
-    const s = list[i];
+    const original = list[i];
+    const override = gd.uniteExpansion ? UNITE_TUNING.templates[tpl.id]?.[i] : null;
+    const s = override && original && !original.tag && !original.unharmful ? {...original, ...override} : original;
     if (!s || (s.action && String(s.action).toUpperCase() !== 'SPAWN')) continue;
     if (first < 0) first = i;
     if ((s.key ?? s.enemyKey) === want) return { index: i, s };
@@ -482,13 +529,17 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
   const leader = isLeaderTemplate(wave && wave.templateId ? gd.wave(wave.templateId) : null);
   const groups = new Map(); // host action index → { host, items: [{ b, c, fly, count }] }
   for (const b of bounties || []) {
-    const c = b && b.card ? b.card : {};
+    const base = b && b.card ? b.card : {};
+    const keys = gd.uniteExpansion && Array.isArray(base.enemyKeys) ? base.enemyKeys : [base.enemyKey];
+    for (const enemyKey of keys) {
+    const c = { ...base, enemyKey };
     if (!gd.enemy(c.enemyKey)) continue;
     const fly = isFlyKey(gd, c.enemyKey);
     const host = hostAction(gd, wave, { fly });
     const key = host ? host.index : -1;
     if (!groups.has(key)) groups.set(key, { host, items: [] });
     groups.get(key).items.push({ b, c, fly, count: Math.max(1, Math.min(20, Number.isInteger(c.count) ? c.count : 1)) });
+    }
   }
   const specs = [];
   const retime = new Map(); // host action index → { time, step, ownRuns: [{ start, len }] }
@@ -500,7 +551,7 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
     const act = host ? acts.find((a) => a.index === host.index) : null;
     // the host's own units: only a server-sent action has any (a leader / random-group / invalid host spawns the
     // bounty list alone over its window — client _InsertSpActionToNormal finds no normal list for it)
-    const own = act && act.valid && act.server !== false ? act.count : 0;
+    const own = act && act.valid && act.server !== false ? Math.min(MAX_ACTION_UNITS, act.count) : 0;
     const sp = [];
     for (const it of items) for (let k = 0; k < it.count; k++) sp.push(it);
     // _InsertSpActionToNormal: insert the bounty units among the action's own units (list.Insert(FloorToInt(...)))
@@ -528,11 +579,13 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
         routeIndex,
         count: run.len,
         interval: run.len > 1 ? step : 0,
-        mods: { hpMul: scale.hpMul, atkMul: scale.atkMul, speedMul: scale.speedMul, slot: classOf(gd, c.enemyKey), bountyId: b.id },
+        mods: { ...roundMods(scale), slot: classOf(gd, c.enemyKey), bountyId: b.id,
+          ...(gd.uniteExpansion && c.enemyKeys?.length > 1 ? { unitePairId: b.id } : {}) },
         tag: 'bounty',
         ownerPlayerId: playerId,
         preview: previewInfo(gd, c.enemyKey, routes[routeIndex], false, leader),
       };
+      if (gd.uniteExpansion && c.roundReward && c.enemyKey===b.card.enemyKey) spec.mods.relicCount=c.collectibleCount;
       if (host) spec.actionIndex = host.index;
       if (c.payout !== 'perfect' && Number(c.coin) > 0) spec.bounty = { coins: Math.trunc(c.coin), ownerPlayerId: playerId };
       specs.push(spec);
@@ -653,6 +706,12 @@ export function buildUniteWave(gd, leaked, helperCount, timeLimit) { // eslint-d
           mods: l.mods ? { ...l.mods } : { slot: classOf(gd, l.enemyKey) }, sourcePlayerId: l.sourcePlayerId,
           preview: previewInfo(gd, l.enemyKey, routes[routeIndex]),
         };
+        if (gd.uniteExpansion && l.mods?.unitePairId) {
+          const priest = l.enemyKey === 'enemy_2028_syevil';
+          const hasPartner = leaked.some(o => o !== l && o.mods?.unitePairId === l.mods.unitePairId
+            && (priest ? ['enemy_2029_symon','enemy_2030_symon2'].includes(o.enemyKey) : o.enemyKey === 'enemy_2028_syevil'));
+          if (!hasPartner) spec.mods.unitePairTerminal = true;
+        }
         if (idx >= 0) spec.actionIndex = idx;
         if (l.bounty && l.bounty.coins > 0) spec.bounty = { coins: l.bounty.coins, ownerPlayerId: l.bounty.ownerPlayerId ?? l.sourcePlayerId };
         if (l.tag === 'bounty') spec.tag = 'bounty';

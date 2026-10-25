@@ -3,8 +3,8 @@
 // Kit contract and the 自选 rules: ../README.md ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_4037_demetr, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, FGT-Y (his only module) at stage 1 (tier 5) or 3 (tier 6) or none. Potential 0 [ASSUMED: no
-// account]. Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json; the 牵绊 token
+// elite = E2 Lv60, rank 7, FGT-Y (his only module) at stage 1 (tier 5) or 3 (tier 6) or none. Full potential (the owner's
+// decision of 2026-10-07). Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json; the 牵绊 token
 // record backups.json tokens.token_10065_demetr_dmtpos); PRTS 贝洛内 (家族手段 备注 "防御减少效果于贝洛内每次普通攻击时，计算伤害前
 // 施加（可影响当次攻击）…防御减少方式为最终乘算…多个贝洛内之间的【手段】间仅防御减少量最高者生效…每0.1秒自然更新一次；当具有≥6层层数
 // 的【手段】自然更新/响应更新时，若该【手段】的来源（贝洛内）不处于2技能状态或已离场，层数将强制变回5层…增伤效果为线性提升，可对任何来自
@@ -29,7 +29,7 @@
 //   the higher per-stack value [ASSUMED: the client keeps one per source and only the highest reduction acts]. And every
 //   damage of his ×(1 + add-on), the add-on linear from min_add_on_scale at min_hp_ratio of the target's HP to
 //   max_add_on_scale at max_hp_ratio and below (DamageScaleAccordingToHpRatio, the target's HP before the hit). FGT-Y stage 3:
-//   8 % per stack, +42 % at most.
+//   8 % per stack, +50 % at most.
 // - T2 街头直觉 (bb init_prob / dec_prob / trig_cnt): from every deployment — a 【移动】 is one (demetr_s3_t[born_sync]) —
 //   physical and arts dodge init_prob, −dec_prob each second trig_cnt times (80 % → 40 %), then stays.
 // - S1 家主的余裕 (AUTO, attack SP 4; data DEFAULT): the next attack strikes its target twice for atk_scale × ATK physical
@@ -58,6 +58,7 @@
 // Melee, ground-only (data canHitFly false: no anti-air); ground enemies target him normally (no 起飞 / 迷彩 / 隐匿).
 
 import { num, talentBb, traitBb, skillRec, up, onHitBy, toggleBuff, once } from '../shared/tier1.js';
+import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
 import { isElite } from '../shared/tier6.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 
@@ -124,7 +125,7 @@ function installMeansTick(battle) {
 export default {
   char_4037_demetr: (bb, chess) => {
     const tb = traitBb(chess);       // FGT-Y: attack_speed / hp_ratio
-    const t0 = talentBb(chess, 0);   // 家族手段 (FGT-Y stage 3: def −0.08, max_add_on_scale 0.42)
+    const t0 = talentBb(chess, 0);   // 家族手段 (FGT-Y stage 3: def −0.08, max_add_on_scale 0.5)
     const t1 = talentBb(chess, 1);   // 街头直觉
     const b1 = bbOf(chess, S1), b2 = bbOf(chess, S2), b3 = bbOf(chess, S3);
     const s2 = skillRec(chess, S2), s3 = skillRec(chess, S3);
@@ -208,7 +209,11 @@ export default {
             }
             if (battle.time + 1e-9 < st.next) return;
             // no target (or he cannot act): the timer keeps counting — the next try at its next interval
-            if (!flyTo(battle, unit, st)) while (st.next <= battle.time + 1e-9) st.next += iv;
+            if (!flyTo(battle, unit, st)) {
+              const step = stepOf('attack@demetr_s3[target_timer].interval', iv, 0.5);
+              let guard = 0;
+              while (st.next <= battle.time + 1e-9 && guard++ < STEP_PER_TICK) st.next += step; // loop-cap: stepOf interval
+            }
           },
           onEnd({ battle, unit }) {
             const st = unit.mem.demetrS3;

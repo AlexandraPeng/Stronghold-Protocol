@@ -25,7 +25,7 @@ export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands
 export function useGameData() {
   const ready = useData(...GAME_FILES);
   // (config / factions / choices are read once per memo: a language switch reads them again in the new locale)
-  return useMemo(() => makeLookups(ready), [ready, data.locale?.() || 'zh']);
+  return useMemo(() => makeLookups(ready), [ready, data.locale()]);
 }
 
 /** A 自选 operator's summon record (data/backups.json `tokens`, 0.2.0), or null. */
@@ -179,7 +179,6 @@ export function gearPath({ teeth = 8, rTip = 10, rRoot = 7.4, tipW = 3.2, rootW 
 /** Extra 24×24 glyphs used by the in-match HUD (original shapes). */
 export const GLYPHS = Object.freeze({
   gear: gearPath(),
-  chat: 'M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7l-4 4V6a2 2 0 0 1 2-2zm2 4v2h12V8H6zm0 4v2h8v-2H6z',
   eye: 'M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z',
   emote: 'M8.2 2h7.6L22 8.2v7.6L15.8 22H8.2L2 15.8V8.2zM8.5 8.5v3h2v-3zm5 0v3h2v-3zM7.8 14.2a5.5 5.5 0 0 0 8.4 0l-1.5-1.3a3.5 3.5 0 0 1-5.4 0z',
   dp: 'M13 2 4 13.5h6.2L9 22l11-12.5h-6.4z',
@@ -202,8 +201,9 @@ export function GIcon({ name, class: cls, title }) {
 
 /**
  * Green LP tower + number. `pending` (> 0): the loss the running battle's leaks will cost at settlement (user
- * playtest #3 item 2) — the number shows value − pending in red followed by a −N tick that pops again on every change
- * (keyed); `note` a small tag after it (联防中); `tip` the title text.
+ * playtest #3 item 2) — the number keeps the settled LP (owner-approved #479 / #504),
+ * shown in red with a −N tick that pops again on every change (keyed); `note` a
+ * small tag after it (联防中); `tip` the title text.
  * @param {{ value: any, size?: 'sm'|'md'|'lg', class?: string, tone?: string|null, pending?: number, note?: string|null, tip?: string|null }} props
  */
 export function LpTower({ value, size = 'md', class: cls, tone, pending = 0, note = null, tip = null }) {
@@ -212,7 +212,7 @@ export function LpTower({ value, size = 'md', class: cls, tone, pending = 0, not
   return html`<span class=${cx('lp', `lp--${size}`, tone && `lp--${tone}`, p > 0 && 'is-pending', cls)} title=${tip || tr('目标生命值')}
       data-pending=${p > 0 ? p : null}>
     <${Sprite} k="hudPanel/icon_hp" class="lp__icon" fallback=${html`<${Icon} name="rook" class="lp__icon" />`} />
-    <b class="num lp__val">${ok ? Math.max(0, value - p) : '--'}</b>
+    <b class="num lp__val">${ok ? Math.max(0, value) : '--'}</b>
     ${p > 0 ? html`<span key=${p} class="lp__pend num" aria-label=${tr('结算时扣除 {p}', { p })}>−${p}</span>` : null}
     ${note ? html`<span class="lp__note">${note}</span>` : null}
   </span>`;

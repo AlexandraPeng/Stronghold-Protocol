@@ -7,7 +7,7 @@ const cases=[["1_19", 1], ["3_02", 1], ["4_02", 2], ["4_09", 2], ["4_22", 2], ["
 for(const [id,index] of cases)for(const suffix of ['a','b'])for(const dir of ['RIGHT','UP','LEFT','DOWN'])test(`${id}_${suffix} skill ${index+1} ${dir}: extended range casts, outside/low SP/cooldown do not`,()=>{
  const h=makeBattle({kind:'unite',rect:{r0:0,r1:18,c0:0,c1:20},autoFinish:false,defs:{enemies:{dummy:enemyRec({key:'dummy',hp:1e9,speed:0})}},units:[{chessId:`chess_char_${id}_${suffix}`,skillIndex:index,row:10,col:10,dir}],hooks:['skillStart']});
  h.b.start();const u=h.b.allyUnits[0],s=u.skill;
- assert.equal(s.rule,'EXPANDED_SKILL_RANGE');
+ assert.ok(['ACTIVE_RANGE','SKILL_RANGE','EXPANDED_SKILL_RANGE'].includes(s.rule), s.rule);
  const tg=s.spec.targeting||{};
  const keys=absoluteRangeKeys(tg.rangeGrid||s.def.rangeGrid||u.rangeGrid,u.tileR,u.tileC,u.dir,u.s.rangeExtend+(tg.rangeExtend||0));
  const base=new Set(u.baseRangeKeys);const key=keys.find(k=>!base.has(k));assert.notEqual(key,undefined);

@@ -3,7 +3,7 @@
 // Kit contract and the 自选 rules: ../README.md ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_134_ifrit, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
+// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Full potential (the owner's decision of 2026-10-07).
 // Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json); PRTS 伊芙利特 (炎爆 备注
 // "灼伤：目标每秒受到伊芙利特当前攻击力33%的法术持续伤害，伊芙利特离场后也会生效" and "<模组相关>于伊芙利特在场时受模组基础效果影响";
 // 灼地 备注 "属于维持技能状态，时间模式为跟随动画", "降低法术抗性的效果持续1秒"; 精神融解 备注 "<Δ模组>造成的元素伤害为持续伤害";
@@ -21,18 +21,19 @@
 // - Module BLA-D “热成形记忆” (trait ep_damage_ratio 0.08): "造成法术伤害时附带相当于8%伤害的灼燃损伤" (ifrit_e_003_tr: ON_AFTER_
 //   OUTPUT_DAMAGE, every MAGICAL damage of hers) — 8 % of the HP damage dealt as 灼燃损伤 (`type: 'element'`, docs/SIM.md §7.2
 //   element conventions), the 灼伤 too while she stands. Stage 3 also changes T1 (below).
-// - T1 精神融解 "攻击范围内的敌军法术抗性-40%" (magic_resistance −0.4: a ratio; charpack ifrit_t_1, removed when the enemy leaves):
-//   RES ×0.6 on every enemy on her range, refreshed every AURA_IV s; several 伊芙利特 keep one (applyStrongest — the mode's
-//   "同名效果取最高" convention; [ASSUMED] the client's independentCharacterSource flag would let two stack, which a lone
-//   base-game 伊芙利特 never shows). BLA-D stage 2+ "若攻击目标处于灼燃损伤爆发期间，攻击对其额外造成相当于攻击力50%的元素伤害" (the
-//   module's hidden talent element_atk_scale; ifrit_e_003_ele: IsTargetInEPBreakRecovery FIRE ⇒ ELEMENT damage, attack type
-//   BUFF, 持续伤害): every hit of her attack abilities — normal attacks and the 灼地 ticks (the equip adds it to the abilities of
-//   `_targetFamilyMask` 31, [ASSUMED] every family: 1 / 3 mark the narrower equips) — on an enemy in its 灼燃 burst (its
-//   `burnBurst` lock) adds 50 % ATK 元素伤害
-//   (`type: 'elemental'`), tagged 'dot' (PRTS: "<Δ模组>造成的元素伤害为持续伤害"); never the 灼伤 (a buff's damage).
-// - T2 莱茵回路 "每6秒额外回复2点技力" (periodic_sp; BLA-X stage 2+ ifrit_e_002[sp]): +sp SP every `interval` s of a deployment
-//   (the first one interval in: waitFirstTriggerInterval; a gift during a running 狂热 / 灼地 is lost — no SP during a
-//   skill). BLA-X stage 2+ "有30%概率额外回复5点技力" (ifrit_e_002[dice_sp] prob / interval / sp): one roll per its own interval.
+// - T1 精神融解 "攻击范围内的敌军法术抗性-40%" (full potential: −44 %; magic_resistance −0.44: a ratio; charpack ifrit_t_1, removed
+//   when the enemy leaves): RES ×0.56 on every enemy on her range, refreshed every AURA_IV s; several 伊芙利特 keep one
+//   (applyStrongest — the mode's "同名效果取最高" convention; [ASSUMED] the client's independentCharacterSource flag would let
+//   two stack, which a lone base-game 伊芙利特 never shows). BLA-D stage 2+ "若攻击目标处于灼燃损伤爆发期间，攻击对其额外造成
+//   相当于攻击力50%的元素伤害" (the module's hidden talent element_atk_scale; ifrit_e_003_ele: IsTargetInEPBreakRecovery FIRE
+//   ⇒ ELEMENT damage, attack type BUFF, 持续伤害): every hit of her attack abilities — normal attacks and the 灼地 ticks
+//   (the equip adds it to the abilities of `_targetFamilyMask` 31, [ASSUMED] every family: 1 / 3 mark the narrower equips)
+//   — on an enemy in its 灼燃 burst (its `burnBurst` lock) adds 50 % ATK 元素伤害 (`type: 'elemental'`), tagged 'dot'
+//   (PRTS: "<Δ模组>造成的元素伤害为持续伤害"); never the 灼伤 (a buff's damage).
+// - T2 莱茵回路 "每6秒额外回复2点技力" (full potential: every 5.5 s; periodic_sp; BLA-X stage 2+ ifrit_e_002[sp]): +sp SP every
+//   `interval` s of a deployment (the first one interval in: waitFirstTriggerInterval; a gift during a running 狂热 / 灼地
+//   is lost — no SP during a skill). BLA-X stage 2+ "有30%概率额外回复5点技力" (ifrit_e_002[dice_sp] prob / interval / sp):
+//   one roll per its own interval.
 // - S1 狂热 (MANUAL, data DEFAULT, 20 s): ATK +atk, ASPD +attack_speed.
 // - S2 炎爆 (AUTO, 可充能 2 / 3 次, data DEFAULT — the "next attack" waits for her attack): the next attack hits her whole line
 //   (ground and air: its selector's targetMotion ALL) for atk_scale × ATK; every enemy it hits gets the buff ifrit_s_2
@@ -49,8 +50,10 @@
 //   the stated 2 %]). 晕眩 / 冻结 (any state that stops her acting) ends it at once (PRTS 维持技能状态).
 
 import { num, talentBb, moduleBb, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
-import { bodyInKeys } from '../../../body.js';
+import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
+import { bodyInRange } from '../../../body.js';
 import { hasHp } from '../../../damage.js';
+import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_ifrit_1';
 const S2 = 'skchr_ifrit_2';
@@ -133,12 +136,12 @@ export default {
             // 维持技能状态: a hard control (晕眩 / 冻结 / 浮空 / 睡眠 — the unit cannot act) ends it at once
             if (!unit.canAct) { skill.end('interrupted'); return; }
             const t = (unit.mem.scorchAt = (unit.mem.scorchAt ?? 0) + dt);
-            while (t >= unit.mem.scorchNext - 1e-6 && unit.alive && skill.active) {
+            while (t >= unit.mem.scorchNext - 1e-6 && unit.alive && skill.active) { // loop-cap: constant S3_CADENCE
               unit.mem.scorchNext += S3_CADENCE;
               scorch(battle, unit, b3);
             }
             const ratio = num(b3.hp_ratio);
-            while (ratio > 0 && t >= (unit.mem.scorchLoss + 1) * S3_LOSS_IV - 1e-6 && unit.alive) {
+            while (ratio > 0 && t >= (unit.mem.scorchLoss + 1) * S3_LOSS_IV - 1e-6 && unit.alive) { // loop-cap: constant S3_LOSS_IV
               unit.mem.scorchLoss++;
               battle.loseHp(unit, unit.s.maxHp * ratio, { source: unit, tags: ['skill', SCORCH_TAG] });
             }
@@ -146,13 +149,13 @@ export default {
         },
       },
       talents: [
-        { install(battle, unit) { // 精神融解: RES −40 % on her range; BLA-D stage 2+: +50 % ATK 元素伤害 on a bursting target
+        { install(battle, unit) { // 精神融解: RES −44 % on her range; BLA-D stage 2+: +50 % ATK 元素伤害 on a bursting target
           const v = num(t0.magic_resistance);
           if (v) {
             battle.every(AURA_IV, () => {
               if (!up(unit) || !unit.rangeKeySet) return;
               for (const e of battle.enemies) {
-                if (!e.alive || e.hidden || !bodyInKeys(e, unit.rangeKeySet)) continue;
+                if (!e.alive || e.hidden || !bodyInRange(e, unit.rangeKeySet)) continue;
                 battle.applyStrongest(e, MELT_KEY, { duration: AURA_DUR, value: v, mods: resCut, source: unit });
               }
             }, { owner: unit, immediate: true });
@@ -167,20 +170,22 @@ export default {
           }
         } },
         { install(battle, unit) { // 莱茵回路: +sp SP every interval s; BLA-X stage 2+: prob to +5 SP more
-          const sp = num(t1.sp), iv = num(t1.interval, 6);
+          const sp = num(t1.sp), iv = stepOf('interval', num(t1.interval, 6), 6);
           const dProb = num(t1['ifrit_e_002[dice_sp].prob']), dSp = num(t1['ifrit_e_002[dice_sp].sp']);
-          const dIv = num(t1['ifrit_e_002[dice_sp].interval'], iv);
+          const dIv = stepOf('ifrit_e_002[dice_sp].interval', num(t1['ifrit_e_002[dice_sp].interval'], iv), iv);
           if (!(sp > 0 && iv > 0) && !(dProb > 0 && dSp > 0 && dIv > 0)) return;
           battle.on('deploy', (c) => { if (c.unit === unit) { unit.mem.rhineAcc = 0; unit.mem.rhineDice = 0; } }, { owner: unit });
           battle.on('tick', ({ dt }) => {
             if (!up(unit)) return;
             if (sp > 0 && iv > 0) {
               unit.mem.rhineAcc = (unit.mem.rhineAcc ?? 0) + dt;
-              while (unit.mem.rhineAcc >= iv - 1e-6) { unit.mem.rhineAcc -= iv; giveSp(unit, sp); }
+              let guard = 0;
+              while (unit.mem.rhineAcc >= iv - 1e-6 && guard++ < STEP_PER_TICK) { unit.mem.rhineAcc -= iv; giveSp(unit, sp); } // loop-cap: stepOf interval
             }
             if (dProb > 0 && dSp > 0 && dIv > 0) {
               unit.mem.rhineDice = (unit.mem.rhineDice ?? 0) + dt;
-              while (unit.mem.rhineDice >= dIv - 1e-6) {
+              let guard = 0;
+              while (unit.mem.rhineDice >= dIv - 1e-6 && guard++ < STEP_PER_TICK) { // loop-cap: stepOf interval
                 unit.mem.rhineDice -= dIv;
                 if (battle.rng.chance(dProb)) giveSp(unit, dSp);
               }
@@ -196,7 +201,7 @@ export default {
           battle.on('hit', (c) => {
             const e = c.target;
             if (c.source !== unit || !e || e.side !== 'enemy' || c.dmg.type === 'element' || !up(unit)) return;
-            const d = Math.hypot(e.x - unit.x, e.y - unit.y);
+            const d = hypot(e.x - unit.x, e.y - unit.y);
             c.dmg.mul *= 1 + ds * (hi > lo ? Math.max(0, Math.min(1, (d - lo) / (hi - lo))) : 1);
           }, { owner: unit });
         }

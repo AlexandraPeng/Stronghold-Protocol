@@ -1,6 +1,8 @@
 // ui/gameLogic/draft.js — 机变 and band-draft normalisation. Re-exported from ../gameLogic.js.
 
 import { isObj } from './shared.js';
+import { PHASE } from '../../../../shared/constants.js';
+import { t } from '../../../../shared/i18n.js';
 
 
 // ---- 机变 / band draft normalisation ----------------------------------------------------------------------
@@ -45,7 +47,7 @@ export function normalizeSp(sp, players = []) {
   if (!isObj(sp)) return null;
   const ids = (Array.isArray(players) ? players : []).filter(isObj).map((p) => p.playerId);
   const order = Array.isArray(sp.order) && sp.order.length ? sp.order.filter((x) => typeof x === 'string') : ids;
-  const cards = (Array.isArray(sp.cards) ? sp.cards : []).slice(0, 6).map((c, idx) => {
+  const cards = (Array.isArray(sp.cards) ? sp.cards : []).slice(0, sp.roundBounty ? 9 : 6).map((c, idx) => {
     const card = typeof c === 'string' ? { id: c } : isObj(c) ? { ...c } : {};
     return { ...card, idx, takenBy: typeof card.takenBy === 'string' ? card.takenBy : null };
   });
@@ -71,5 +73,18 @@ export function normalizeSp(sp, players = []) {
     desc: typeof sp.desc === 'string' && sp.desc ? sp.desc : null,
     untimed: !!sp.untimed,
     cards, order, turnPid, pickOf, takenBy, pickedCount: pickOf.size,
+  };
+}
+
+/** Adapt only the recipient's current PREP choice; never write it into the public draft. */
+export function normalizePersonalChoice(pub, priv, myId) {
+  const choice = priv?.personalChoice;
+  if (pub?.phase !== PHASE.PREP || !priv || priv.playerId !== myId || priv.alive === false
+    || !choice || choice.round !== pub.round) return null;
+  return {
+    ...normalizeSp({ family: 'bounty', roundBounty:choice.kind==='roundBounty', name: choice.kind==='roundBounty'?t('每回合藏品'):t('教鞭 · 战术特训'), desc: choice.kind==='roundBounty'?t('九选一 · 按档位随机获得藏品'):t('请选择一项战术特训'),
+      cards: choice.cards, turn: myId, order: [myId], picks: {} }),
+    id: choice.id,
+    roundBounty:choice.kind==='roundBounty',
   };
 }

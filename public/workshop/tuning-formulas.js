@@ -1,0 +1,15 @@
+import { t } from '../../shared/i18n.js';
+import { relicWeight, BASE_RELICS, relicDrops } from '../../shared/relicTuning.js';
+export function mountFormulaGuide(section,config){
+ const s=section('formulas',t('计算公式与示例'));
+ const add=(title,body)=>{const h=document.createElement('h3'),p=document.createElement('pre');h.textContent=title;p.textContent=body;s.append(h,p);};
+ add(t('波次数量与出场时间'),t('优先使用敌人 attrPower；缺失时 P = 5×ATK + HP + 3×DEF + 3×RES（系数来自群系 generation.beFactors）。\nf = beFactor，非正或缺失时取 1；F 表示 Math.fround，即 float32。\nA = F(F(模板数量 n × P模板) / f模板)\nB = F(P目标 / f目标)\nN = clamp(roundHalfEven(F(A/B)), 最小数量, min(默认上限, 敌人单条上限))\nroundHalfEven：0.5 时取相邻偶数，例如 2.5→2、3.5→4；B≤0 时返回最小数量。通常上下限为 1、5。\n第 i 个敌人的时间 = 起始时间 + i × max(n×原间隔/N, 0.05×n×原间隔)，i 从 0 开始。\n单回合总数 = 各条普通波次 N 之和；领袖、悬赏、部件和技能召唤另计。路线先筛选飞行/地面，回合和群系阶段限制同时生效。'));
+ add(t('悬赏九选一的条件概率'),t('第 j 次抽取：只保留有剩余候选且权重>0的档位 S。\nP(档位 c | 当前候选池) = w[c] / Σ(S 中权重)。\nP(该档某敌人 | c) = 1 / 当前该档敌人数。\nP(该候选) = 两者乘积。抽中后删除所有同身份敌人的其他资金版本，再计算下一次概率，直到 9 个。\n因此配置的百分比不是九张卡的固定比例，也不是某敌人至少出现一次的概率。\n示例：权重 50/40/10，2 档耗尽后，0/1 档变为 55.5556% / 44.4444%。'));
+ add(t('藏品掉落、期望与稀有度'),t('每件藏品概率 p[i] = 权重[i] / 所有启用藏品的权重之和；权重 0 不掉落。\n稀有度概率 = 同稀有度所有藏品概率之和；不会先按稀有度再抽藏品。\n一次击杀掉落 k 件：每件独立抽取，允许重复。某藏品期望件数 = k×p；至少一件概率 = 1−(1−p)^k。\n只有真实击杀结算；同一回合和悬赏记录只结算一次，未击杀无奖励。背包满时奖励排队。'));
+ add(t('收藏品属性与绑定效果'),t('char_attribute_add 为固定加值；char_attribute_mul 为加成比例，0.2 表示 +20%，不是乘 0.2。\nATK = max(0, ((基础ATK + Σ固定攻击) × max(0,1+Σ攻击比例) + 最终攻击加值) × Π攻击乘区 × 练度倍率)。\nDEF/HP 同类计算，HP 至少 1；RES = clamp((基础法抗+Σ法抗加值)×Π法抗乘区,0,100)。\nASPD = clamp((基础攻速+Σ攻速加值)×Π攻速乘区,20,600)。攻击间隔 = 调整后基础间隔×100/ASPD，最终动作还受帧对齐和技能影响。\n金酒之杯额外攻速 = attack_speed × floor(战斗输入资金 / stack_by_res_cnt)，并非战斗中实时重新读取资金。\n技能技力消耗乘区 *= scale；敌方承伤乘区 *= damage_scale；自动回技力每秒增加 sp_recovery_per_sec；部署时增加 sp。\n绑定效果：atkPerCast×min(maxCasts,施放次数)；每次普攻减少法抗 resPerHit，累计最多 resCap；defIgnorePct 为无视比例；redeployMul 为再部署乘数。\nspOnHit/spOnHeal 为受普攻伤害/非持续治疗时的技力；revives 为每战复活次数；interval 为触发秒数，duration 为光环持续秒数。\natkPct/aspd 为指定干员加成；spCostMul 为技力消耗乘数；光环 defMul/resMul 为敌人防御/法抗乘数。特殊机制和选择器保持原实现。'));
+ const box=document.createElement('div');box.className='card';const heading=document.createElement('h3');heading.textContent=t('按当前草稿计算');box.append(heading);
+ const select=document.createElement('select');select.setAttribute('aria-label',t('选择收藏品'));for(const r of BASE_RELICS){const o=document.createElement('option');o.value=r.id;o.textContent=r.name;select.append(o);}
+ const coin=document.createElement('input');coin.type='number';coin.min=0;coin.max=5;coin.value=3;coin.setAttribute('aria-label',t('悬赏资金'));
+ const btn=document.createElement('button');btn.textContent=t('重新计算');const result=document.createElement('pre');
+ btn.onclick=()=>{const total=BASE_RELICS.reduce((n,r)=>n+relicWeight(r.id,config),0),p=total>0?relicWeight(select.value,config)/total:0,c=Number(coin.value);if(!Number.isInteger(c)||c<0||c>5){result.textContent=t('资金必须是 0–5 的整数');return;}const k=relicDrops(c,config);result.textContent=`p = ${(p*100).toFixed(6)}%\nk = ${k}\nE = ${(p*k).toFixed(6)}\nP(≥1) = ${((1-(1-p)**k)*100).toFixed(6)}%`;};box.append(select,coin,btn,result);s.append(box);btn.click();
+}

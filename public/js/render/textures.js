@@ -7,6 +7,7 @@
 //   * FX atlas (one base texture ⇒ particles batch / fit a ParticleContainer),
 //   * status icons, tier chips, backdrop gradients,
 //   * HUD rings: the element discs of the element gauge row and the redeploy countdown ring (hudRings / ringArc),
+//     and the ring's labels (downLabel: one rasterised Text per label, shared by every ring),
 //   * avatar-in-rarity-diamond composites (cached per unit asset id) for the Spine fallback.
 // Everything procedural is deterministic (seeded noise) and generated lazily on first use. Requires
 // globalThis.PIXI and a DOM canvas at call time (never at import time).
@@ -1186,7 +1187,22 @@ export function diamondTexture(key, img, color, o = {}) {
     const sc = Math.max((S - 20) / img.width, (S - 20) / img.height) * 1.02;
     const w = img.width * sc, hh = img.height * sc;
     try { c.drawImage(img, h - w / 2, h - hh / 2, w, hh); } catch { /* tainted/broken image */ }
-  } else if (o.ice) {
+    } else if (key === 'enemy_2121_dyspl2') {
+      // Attached seal has no standalone public Spine model: draw a paper talisman.
+      c.save(); c.translate(h, h); c.rotate(-0.15);
+      c.fillStyle = '#efda9a'; c.fillRect(-21, -45, 42, 90);
+      c.strokeStyle = '#b43b30'; c.lineWidth = 5;
+      c.beginPath(); c.moveTo(-12, -27); c.lineTo(12, -27); c.moveTo(0, -35); c.lineTo(0, 30);
+      c.moveTo(-12, -8); c.lineTo(12, 2); c.lineTo(-10, 14); c.lineTo(12, 24); c.stroke(); c.restore();
+    } else if (key === 'enemy_2156_shsmok') {
+      // Smoke emitter is an effect object, not an operator portrait.
+      for (const [x, y, r] of [[64, 78, 29], [92, 73, 32], [78, 50, 24]]) {
+        const fog = c.createRadialGradient(x, y, 1, x, y, r);
+        fog.addColorStop(0, 'rgba(208,224,218,0.85)'); fog.addColorStop(1, 'rgba(125,153,146,0)');
+        c.fillStyle = fog; c.fillRect(x-r, y-r, 2*r, 2*r);
+      }
+      c.fillStyle = '#82978d'; c.fillRect(69, 94, 22, 23);
+    } else if (o.ice) {
     // 圣聆初雪's frozen gate (保护目标（冻结状态）, PRTS 无头像, no model in the manifest): a snowflake on a frosty field
     const g = c.createRadialGradient(h, h, 4, h, h, h);
     g.addColorStop(0, 'rgba(205,240,255,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -1302,6 +1318,7 @@ export const ELEMENT_RING = Object.freeze({
   burn: Object.freeze({ disc: '#8f3512', glyph: '#f0cdbd', tint: 0xe0632c }),
   apoptosis: Object.freeze({ disc: '#363338', glyph: '#bdb8c2', tint: 0x9c8fb0 }),
   necrosis: Object.freeze({ disc: '#363338', glyph: '#bdb8c2', tint: 0x9c8fb0 }),
+  mania: Object.freeze({ disc: '#763127', glyph: '#ffd5a0', tint: 0xf49a48 }),
 });
 const RING_KEYS = Object.keys(ELEMENT_RING);
 const RC = 64;              // cell px
@@ -1323,7 +1340,11 @@ function discRim(c, cx, cy) {
 
 function drawElementGlyph(c, el, cx, cy, col) {
   c.fillStyle = col; c.strokeStyle = col; c.lineCap = 'round'; c.lineJoin = 'round';
-  if (el === 'neural') {           // concentric target
+  if (el === 'mania') {           // jagged pulse; locally drawn, no copied game asset
+    c.lineWidth = 2.8; c.beginPath(); c.moveTo(cx - 13, cy);
+    c.lineTo(cx - 7, cy); c.lineTo(cx - 3, cy - 11); c.lineTo(cx + 2, cy + 11);
+    c.lineTo(cx + 7, cy); c.lineTo(cx + 13, cy); c.stroke();
+  } else if (el === 'neural') {           // concentric target
     c.lineWidth = 2.4;
     c.beginPath(); c.arc(cx, cy, 12, 0, Math.PI * 2); c.stroke();
     c.beginPath(); c.arc(cx, cy, 7, 0, Math.PI * 2); c.stroke();
@@ -1423,4 +1444,34 @@ export function ringArc(frac) {
   let k = Math.round(f * RING_STEPS);
   if (k === 0 && f > 0) k = 1;
   return r.arcs[k];
+}
+
+/** Redeploy-ring label style (the seconds left, "DP", "!"); `fill` is set per label. */
+export const DOWN_LABEL_STYLE = Object.freeze({ fontFamily: 'Bender, Oxanium, "Noto Sans SC", sans-serif', fontSize: 32, fontWeight: '700', fill: '#ffffff', stroke: '#0b0f0e', strokeThickness: 6 });
+const _downLabels = new Map();
+
+/**
+ * The texture of a redeploy-ring label: one rasterised PIXI.Text per (label, fill, resolution), shared by every ring
+ * that shows it (render/units.js _updateDownRing draws it as a Sprite, anchor 0.5). A ring's own Text re-rasterised its
+ * canvas and re-uploaded its texture on every change, once a second per knocked-out operator, though rings mostly show the
+ * same few numbers; the shared one is drawn once and kept, the same pixels. At most 80 counts (the longest respawn in
+ * chess.json) + "DP" + "!" per resolution, ≈ 2.5 MB at resolution 2.
+ */
+export function downLabel(label, fill, resolution = 1) {
+  const key = `${label}|${fill}|${resolution}`;
+  let t = _downLabels.get(key);
+  if (!t) {
+    t = new (PIXI().Text)(label, { ...DOWN_LABEL_STYLE, fill });
+    t.resolution = resolution;
+    t.updateText(false);
+    _downLabels.set(key, t);
+  }
+  return t.texture;
+}
+
+/** Redraw the shared ring labels in place (web fonts that landed after some were drawn); their textures stay the same. */
+export function refreshDownLabels() {
+  for (const t of _downLabels.values()) {
+    try { t.updateText(false); } catch { /* keep the old glyphs */ }
+  }
 }

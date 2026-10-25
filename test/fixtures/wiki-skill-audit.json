@@ -1,0 +1,90 @@
+{
+  "checkedAt": "2026-10-12",
+  "scope": "本次已确认的 CI 失败项；不代表全干员全部技能通过。数值按本分支现有满潜能、对应技能等级与模组等级核对。",
+  "entries": [
+    {
+      "operator": "焰影苇草",
+      "source": "https://prts.wiki/w/焰影苇草",
+      "condition": "精英2，INC-Y三级，潜能天赋增强",
+      "field": "灼痕法术脆弱",
+      "oldTest": 0.38,
+      "expected": 0.4,
+      "result": "当前数据符合 Wiki，修正旧测试"
+    },
+    {
+      "operator": "流明",
+      "source": "https://prts.wiki/w/流明",
+      "condition": "精英2，THER-Y三级，潜能天赋增强",
+      "field": "应急处理冷却秒数",
+      "oldTest": 10,
+      "expected": 8,
+      "result": "当前数据符合 Wiki，修正旧测试"
+    },
+    {
+      "operator": "伺夜",
+      "source": "https://prts.wiki/w/伺夜",
+      "condition": "精英2，默认一级模组，潜能天赋增强",
+      "field": "狼群天性防御忽略",
+      "oldTest": 175,
+      "expected": 200,
+      "result": "当前数据符合 Wiki，修正旧测试"
+    },
+    {
+      "operator": "伺夜",
+      "source": "https://prts.wiki/w/狼群",
+      "condition": "精英2狼群，战术点形态恢复",
+      "field": "恢复时间与恢复层数",
+      "expected": {
+        "seconds": 25,
+        "shadows": 1
+      },
+      "result": "当前实现符合 Wiki，旧测试误用再部署时间和初次召唤层数"
+    },
+    {
+      "operator": "风丸",
+      "source": "https://prts.wiki/w/风丸",
+      "condition": "精英2，潜能5，纸偶出现伤害",
+      "field": "攻击倍率",
+      "oldTest": 2.7,
+      "expected": 2.75,
+      "result": "当前数据符合 Wiki，修正旧测试"
+    },
+    {
+      "operator": "凯瑟琳",
+      "source": "https://prts.wiki/w/凯瑟琳",
+      "condition": "精英2，默认一级模组，潜能5",
+      "field": "装置初始屏障占生命上限比例",
+      "oldTest": 0.2,
+      "expected": 0.22,
+      "result": "当前数据符合 Wiki，修正旧测试"
+    },
+    {
+      "operator": "泥岩",
+      "source": "https://prts.wiki/w/泥岩",
+      "condition": "S3开启前10秒闭锁阶段",
+      "field": "阻挡",
+      "expected": false,
+      "result": "当前实现符合 Wiki；测试改为释放阻挡、醒来晕眩和恢复阻挡"
+    },
+    {
+      "operator": "余",
+      "source": "https://prts.wiki/w/余",
+      "condition": "礼尚往来，正在阻挡敌人",
+      "field": "庇护",
+      "result": "当前实现使用共享庇护效果；测试检查物理/法术减伤与真实伤害不减，移除对旧私有buff名称的依赖"
+    }
+  ],
+  "otherFindings": [
+    {
+      "operators": [
+        "调香师",
+        "浊心斯卡蒂"
+      ],
+      "finding": "Wiki 将相关持续恢复定义为生命回复速度；旧测试读取 heal 事件不足以判断是否回血。此类用例尚未在本次完成同步。",
+      "sources": [
+        "https://prts.wiki/w/调香师",
+        "https://prts.wiki/w/浊心斯卡蒂"
+      ]
+    }
+  ]
+}

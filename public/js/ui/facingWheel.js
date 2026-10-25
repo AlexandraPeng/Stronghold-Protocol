@@ -13,7 +13,8 @@
 //     LEFT, facing.js boardDir): the chevrons follow the finger, the range / model / intent use the board direction;
 //   * release outside the centre commits (g.move {uid, to, dir} / g.art {…, dir}); release inside the centre, a tap
 //     on ✕, a press outside the diamond or Esc cancels (the piece returns to where it came from). Arrow keys preview a
-//     direction and Enter commits it (keyboard alternative). Mouse, pen and touch all use pointer events.
+//     direction and Enter commits it (keyboard alternative) — Enter on a focused ✕ cancels, on any other focused
+//     button does nothing while the wheel is open (GitHub #394). Mouse, pen and touch all use pointer events.
 //
 // View bridge: the field view (render/app.js or the DOM fallback) may implement `tileScreen(row, col)`,
 // `holdPiece(uid, tile|null)` and `setPieceDir(uid, dir)` (render/app.js does, DESIGN §9); a view without them falls
@@ -23,9 +24,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html } from './components.js';
-import { audio } from '../audio.js';
 import { LocalSprite } from './gameComponents.js';
 import { DIRS, DIR_LABEL, DEAD_ZONE_TILES, dirFromDelta, dirFromKey, rangeTiles, normDir, boardDir, viewMirrored } from './facing.js';
+import { facingSwallows, facingEnter } from './gameLogic.js';
+import { settingsStore } from './settings.js';
+import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 const rawOf = (view) => (view && view.raw) || view || null;
@@ -168,15 +171,9 @@ export function useTileScreen(view, row, col) {
 /** Chevron centre (viewBox units, diamond half-diagonal = 100) and rotation per direction. */
 const CHEV = { UP: [0, -64, -90], RIGHT: [64, 0, 0], DOWN: [0, 64, 90], LEFT: [-64, 0, 180] };
 
-function Chevron({ dir, on, onClick }) {
-  const { onCommit, onPreview } = arguments[0] || {};
+function Chevron({ dir, on }) {
   const [x, y, rot] = CHEV[dir];
-  const commit = onCommit || onClick;
-  return html`<g class=${cx('fwheel__chev', on && 'is-on')} transform=${`translate(${x} ${y}) rotate(${rot})`}
-      onPointerDown=${(e) => { e.stopPropagation(); onPreview?.(dir); }}
-      onPointerUp=${(e) => { e.stopPropagation(); commit?.(dir); }}
-      onClick=${(e) => { e.stopPropagation(); (onClick || commit)?.(dir); }}>
-    <circle cx="0" cy="0" r="22" fill="transparent" />
+  return html`<g class=${cx('fwheel__chev', on && 'is-on')} transform=${`translate(${x} ${y}) rotate(${rot})`}>
     <path d="M-9 -15 L3 0 L-9 15 L-3 15 L9 0 L-3 -15 Z" />
   </g>`;
 }
@@ -199,7 +196,7 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
   // the committed g.move / g.art use the BOARD direction (render/prepfield.js maps it back for display).
   const mirror = viewMirrored(view) || !!(g && g.mirror);
   const bdir = boardDir(dir, mirror);
-  live.current = { g, half, dead, dir, bdir, mirror, onCommit, onCancel, onPreview, hadDir: live.current?.hadDir || false };
+  live.current = { g, half, dead, dir, bdir, mirror, onCommit, onCancel, onPreview };
 
   // preview: model / wedge direction and the rotated range under the units
   const tiles = useRangeHighlight(view, grid, row, col, bdir);
@@ -210,30 +207,13 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
     const L = live.current;
     if (!L.g) return null;
     const d = dirFromDelta(clientX - L.g.x, clientY - L.g.y, L.dead);
-    if (d && d !== dir) {
-      try { audio.sfx('tab'); } catch { /* ignore */ }
-    }
     setDir(d);
     return d;
   };
   const inside = (clientX, clientY) => {
     const L = live.current;
     if (!L.g) return true;
-    return Math.hypot(clientX - L.g.x, clientY - L.g.y) <= L.half * 2.2;
-  };
-
-  const onDirectCommit = (selectedDir) => {
-    if (!selectedDir) return;
-    setDir(selectedDir);
-    try { audio.sfx('click'); } catch { /* ignore */ }
-    onCommit(boardDir(selectedDir, live.current.mirror));
-  };
-  const onDirectPreview = (selectedDir) => {
-    if (!selectedDir) return;
-    if (selectedDir !== dir) {
-      try { audio.sfx('tab'); } catch { /* ignore */ }
-    }
-    setDir(selectedDir);
+    return Math.abs(clientX - L.g.x) + Math.abs(clientY - L.g.y) <= L.half * 1.18;
   };
 
   const onDown = (e) => {
@@ -242,54 +222,51 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
     e.preventDefault();
     if (!inside(e.clientX, e.clientY)) { onCancel(); return; }
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    setDrag({ id: e.pointerId, t0: Date.now(), x0: e.clientX, y0: e.clientY });
-    live.current.hadDir = false;
-    const d = choose(e.clientX, e.clientY);
-    if (d) live.current.hadDir = true;
+    setDrag({ id: e.pointerId });
+    choose(e.clientX, e.clientY);
   };
   const onMove = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
-    const d = choose(e.clientX, e.clientY);
-    if (d) live.current.hadDir = true;
+    choose(e.clientX, e.clientY);
   };
   const onUp = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
-    const sDrag = drag;
     setDrag(null);
     const d = choose(e.clientX, e.clientY);
-    if (d) {
-      try { audio.sfx('click'); } catch { /* ignore */ }
-      onCommit(boardDir(d, live.current.mirror));
-    } else {
-      const dt = Date.now() - (sDrag.t0 || 0);
-      const dist = Math.hypot(e.clientX - (sDrag.x0 || 0), e.clientY - (sDrag.y0 || 0));
-      if (!live.current.hadDir && dt < 450 && dist < live.current.dead * 1.5) {
-        try { audio.sfx('click'); } catch { /* ignore */ }
-        onCommit(boardDir('RIGHT', live.current.mirror));
-      } else {
-        onCancel();
-      }
-    }
+    if (d) onCommit(boardDir(d, live.current.mirror)); else onCancel();
   };
   const onPointerCancel = () => { setDrag(null); setDir(null); };
 
-  // keyboard: arrows preview, Enter commits, Esc cancels (capture: the game's own shortcuts must not see them)
+  // keyboard: arrows preview, Enter commits, Esc cancels (capture: the game's own shortcuts must not see them). Enter
+  // follows the focus (gameLogic facingEnter, GitHub #394): on ✕ it cancels, on any other button (Tab reaches the HUD
+  // behind the wheel) it does nothing, elsewhere it commits the previewed direction. The wheel takes the focus when it
+  // opens, so a button focused before the drop (a click leaves it focused) cannot swallow the confirming Enter; Tab then
+  // reaches ✕ first. Nothing gives the focus back when it closes (a restored 准备 would take the next Enter / Space).
+  const rootRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => {
       const L = live.current;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); L.onCancel(); return; }
       const k = dirFromKey(e.key);
       if (k) { e.preventDefault(); e.stopImmediatePropagation(); setDir(k); return; }
-      if (e.key === 'Enter' && L.dir) { e.preventDefault(); e.stopImmediatePropagation(); L.onCommit(L.bdir); return; }
-      if (e.key === ' ' || /^Key[RFD]$/.test(e.code || '')) { e.preventDefault(); e.stopImmediatePropagation(); } // no ready / shop while choosing
+      const enter = facingEnter(e, !!L.dir);
+      if (enter) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (enter === 'cancel') L.onCancel();
+        else if (enter === 'commit') L.onCommit(L.bdir);
+        return;
+      }
+      // no ready / shop while choosing: Space and every key of the player's map (设置 → 快捷键)
+      if (facingSwallows(e, settingsStore.get().keys)) { e.preventDefault(); e.stopImmediatePropagation(); }
     };
     window.addEventListener('keydown', onKey, true);
+    try { rootRef.current?.focus({ preventScroll: true }); } catch { /* no focus: Enter still follows whatever has it */ }
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   const outside = !!drag && !!dir;
   const box = half * 2;
-  return html`<div class=${cx('fwheel', drag && 'is-pressed', dir && `is-${dir.toLowerCase()}`)} role="dialog" aria-label=${`选择${name ? `「${name}」的` : ''}朝向`}
+  return html`<div ref=${rootRef} tabIndex="-1" class=${cx('fwheel', drag && 'is-pressed', dir && `is-${dir.toLowerCase()}`)} role="dialog" aria-label=${name ? t('选择「{name}」的朝向', { name }) : t('选择朝向')}
       onPointerDown=${onDown} onPointerMove=${onMove} onPointerUp=${onUp} onPointerCancel=${onPointerCancel}
       onContextMenu=${(e) => { e.preventDefault(); onCancel(); }}>
     ${g ? html`<${Stripes} tiles=${tiles} view=${view} row=${row} col=${col} />` : null}
@@ -301,15 +278,15 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
         <path class=${cx('fwheel__quad', dir === 'DOWN' && 'is-on')} d="M0 100 L-50 50 L0 0 L50 50 Z" />
         <path class=${cx('fwheel__quad', dir === 'LEFT' && 'is-on')} d="M-100 0 L-50 -50 L0 0 L-50 50 Z" />
         <path class="fwheel__inner" d=${`M0 ${-DEAD_ZONE_TILES / 1.5 * 100} L${DEAD_ZONE_TILES / 1.5 * 100} 0 L0 ${DEAD_ZONE_TILES / 1.5 * 100} L${-DEAD_ZONE_TILES / 1.5 * 100} 0 Z`} />
-        ${DIRS.map((d) => html`<${Chevron} key=${d} dir=${d} on=${dir === d} onClick=${onDirectCommit} onCommit=${onDirectCommit} onPreview=${onDirectPreview} />`)}
+        ${DIRS.map((d) => html`<${Chevron} key=${d} dir=${d} on=${dir === d} />`)}
       </svg>
       <button type="button" class="fwheel__cancel" onPointerDown=${(e) => e.stopPropagation()}
-        onClick=${(e) => { e.stopPropagation(); onCancel(); }} aria-label="点击取消">
+        onClick=${(e) => { e.stopPropagation(); onCancel(); }} aria-label=${t('点击取消')}>
         <${LocalSprite} name="cancel_icon" class="fwheel__x" fallback=${html`<span class="fwheel__x fwheel__x--txt">✕</span>`} />
-        <span>点击取消</span>
+        <span>${t('点击取消')}</span>
       </button>
-      ${outside ? html`<span class="fwheel__tip" role="status">拖回中心区域取消</span>` : null}
-      <span class="fwheel__sr" aria-live="polite">${dir ? `朝向：${DIR_LABEL[dir]}` : ''}</span>
+      ${outside ? html`<span class="fwheel__tip" role="status">${t('拖回中心区域取消')}</span>` : null}
+      <span class="fwheel__sr" aria-live="polite">${dir ? t('朝向：{dir}', { dir: t(DIR_LABEL[dir]) }) : ''}</span>
     </div>` : null}
   </div>`;
 }

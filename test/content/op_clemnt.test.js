@@ -14,7 +14,7 @@ const defs = { enemies: { dummy: enemy('dummy'), light: enemy('light', { mass: 3
 function field({ tier = 6, elite = true, skill = 0, potential = 6, dir = 'RIGHT', row = 10, col = 3, flags = {} } = {}) {
   const h = makeBattle({ seed: 23, autoFinish: false, timeLimit: 180, defs, flags,
     hooks: ['damaged', 'attack', 'elementBurst', 'ammoUsed'], captureNoisy: true,
-    units: [{ uid: 1, chessId: `chess_char_${tier}_diy1_${elite ? 'b' : 'a'}`, diy: { charId: C, skillIndex: skill }, row, col, dir }] });
+    units: [{ uid: 1, diy: { slot: tier, charId: C, skillIndex: skill }, elite, potential, row, col, dir }] });
   h.step(); return { h, u: h.unit(1) };
 }
 function done(h) { checkInvariants(h.b); assert.deepEqual(h.b.errors, []); }
@@ -41,24 +41,24 @@ test('风暴潮 auto-cast rejects distant/hidden/sleeping flyers and waits throu
   h.run(0.5); assert.equal(u.skill.activations, 1); done(h);
 });
 
-test('克莱门莎 is selectable with authored skills in both slots, every form at full potential', () => {
+test('克莱门莎 is selectable with authored skills in both slots, every form and potential', () => {
   assert.ok(KITTED_CHARS.includes(C));
   for (const tier of [5, 6]) {
     assert.ok(diyPool(tier, { data, kitted: KITTED_CHARS }).includes(C));
-    for (const elite of [false, true]) for (const skill of [0, 1, 2]) for (const potential of [6]) {
+    for (const elite of [false, true]) for (const skill of [0, 1, 2]) for (const potential of [1, 6]) {
       const { h, u } = field({ tier, elite, skill, potential });
       assert.equal(u.def.charId, C); assert.equal(u.kit.skillSource, 'skills'); assert.ok(!u.kit.generic);
       assert.equal(u.skill.id, `skchr_clemnt_${skill + 1}`);
       assert.deepEqual([u.profile.dmgType, u.profile.canHitFly, u.s.blockCnt, u.base.bat], ['phys', false, 2, 1.2]);
       assert.ok(u.def.bonds.includes('egirShip'));
-      assert.equal(u.skill.rule, 'DEFAULT');
+      assert.equal(u.skill.rule, skill ? 'ACTIVE_RANGE' : 'DEFAULT');
       done(h);
     }
   }
 });
 
 test('生死定夺 checks current versus initial DEF for each physical hit; scales before DEF, never elemental damage', () => {
-  for (const potential of [6]) {
+  for (const potential of [1, 3, 6]) {
     const { h, u } = field({ potential });
     const e = h.spawn('armored', { pos: [10, 6] }); h.b.rng = () => 0.3;
     approx(h.b.dealDamage(u, e, { amount: 1000, type: 'phys' }), 900);
@@ -105,7 +105,7 @@ test('风暴潮 carries at most eight total weight, excludes flyers/self-bound e
   const es = [0, 1, 2].map(() => h.spawn('light', { pos: [10, 4] }));
   const heavy = h.spawn('heavy', { pos: [10, 4] }), fly = h.spawn('fly', { pos: [10, 4] });
   const bound = h.spawn('zero', { pos: [10, 4] }); h.b.addBuff(bound, { key: 'test:bound', flags: { selfBound: true, noMove: true } });
-  start(u); assert.ok(u.s.flags.disarm); h.run(0.65);
+  start(u); assert.ok(u.s.flags.disarm); h.run(0.7);
   assert.equal(u.mem.clemntCabin.passengers.length, 2);
   assert.equal(u.mem.clemntCabin.mass, 2);
   assert.ok(es[0].s.flags.unblockable && es[0].s.flags.disarm);
@@ -129,7 +129,7 @@ for (const reason of ['death', 'hidden', 'self-bound', 'teleport-immune', 'no-pa
     const { h, u } = field({ skill: 1 });
     const victim = h.spawn('light', { pos: [10, 4] });
     const survivor = h.spawn('light', { pos: [10, 4] });
-    start(u); h.run(0.65);
+    start(u); h.run(0.7);
     const c = u.mem.clemntCabin, carry = `clemnt:carry:${u.id}`;
     assert.deepEqual(c.passengers.map((e) => e.id), [victim.id, survivor.id]);
     assert.equal(c.mass, 2);
@@ -158,7 +158,7 @@ for (const [kind, count] of [['zero', 15], ['mid', 1]]) {
   test(`风暴潮 frees the ${kind === 'zero' ? 'fifteenth slot' : 'four-weight budget'} after a passenger dies`, () => {
     const { h, u } = field({ skill: 1 });
     const riders = Array.from({ length: count }, () => h.spawn(kind, { pos: [10, 4] }));
-    start(u); h.run(0.65);
+    start(u); h.run(0.7);
     const c = u.mem.clemntCabin;
     assert.equal(c.passengers.length, count);
     h.b.dealDamage(u, riders[0], { amount: 1e12, type: 'true' });
@@ -175,7 +175,7 @@ for (const [kind, count] of [['zero', 15], ['mid', 1]]) {
 test('风暴潮 returns a released passenger’s current weight after a weight modifier', () => {
   const { h, u } = field({ skill: 1 });
   const victim = h.spawn('light', { pos: [10, 4] });
-  start(u); h.run(0.65);
+  start(u); h.run(0.7);
   const c = u.mem.clemntCabin;
   assert.equal(c.mass, 5);
   h.b.addBuff(victim, { key: 'test:lighter', mods: { massFlat: -1 }, flags: { selfBound: true } });
@@ -190,7 +190,7 @@ test('风暴潮 stops before a blocked tile; vortex keeps its continuous stop po
   const { h, u } = field({ skill: 1 }); h.b.grid.setObstacle(10, 5, true);
   const fly = h.spawn('fly', { pos: [10, 5.55] });
   fly.def = { ...fly.def, epResistance: 99 };
-  start(u); h.run(0.65); assert.ok(u.mem.clemntCabin.stopped);
+  start(u); h.run(0.7); assert.ok(u.mem.clemntCabin.stopped);
   approx(u.mem.clemntCabin.x, 4.1); h.run(1.1);
   approx(fly.findBuff(`clemnt:vortex:${u.id}`).mods.moveMul, 0.3); approx(fly.elem.erosion, 10); // damage formula's 5% floor at 99 resistance
   assert.ok(hits(h, 'clemnt:vortex').some((c) => c.target === fly)); done(h);
@@ -210,15 +210,18 @@ for (const elite of [false, true]) test(`风暴潮 splash uses the published 1.1
   const { h, u } = field({ skill: 1, elite }); start(u); h.run(1.6); h.b.rng = () => 0.99;
   const main = h.spawn('dummy', { pos: [10, 4] });
   const near = h.spawn('dummy', { pos: [10, 5] });
-  const outside = h.spawn('dummy', { pos: [10, 5.2] });
+  // 0.3.0: the collision test takes an enemy's 0.1 collider — a centre 1.15 away is splashed, 1.25 away is not
+  const edge = h.spawn('dummy', { pos: [10, 5.15] });
+  const outside = h.spawn('dummy', { pos: [10, 5.25] });
   const body = h.spawn('dummy', { pos: [10, 5.8] });
   body.hitArea = { w: 1.6, h: 1, dx: 0, dy: 0 };
-  const hp = [main, near, outside, body].map(e => e.hp);
+  const hp = [main, near, outside, body, edge].map(e => e.hp);
   performAttack(h.b, u, effectiveProfile(u), [main]);
   approx(hp[0] - main.hp, u.s.atk * u.skill.bb['attack@aoe_atk_scale']);
   approx(hp[1] - near.hp, u.s.atk);
-  assert.equal(outside.hp, hp[2], 'a point outside radius 1.1 is not splashed');
+  assert.equal(outside.hp, hp[2], 'a collider outside radius 1.1 is not splashed');
   approx(hp[3] - body.hp, u.s.atk, 'a large collision body overlapping radius 1.1 is splashed');
+  approx(hp[4] - edge.hp, u.s.atk, 'a 0.1 collider overlapping radius 1.1 is splashed');
   done(h);
 });
 

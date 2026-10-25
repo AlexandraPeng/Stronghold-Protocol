@@ -2,8 +2,9 @@
 import { html } from './components.js';
 import { useState, useEffect, useRef } from '../../vendor/hooks.module.js';
 import { net } from '../net.js';
-import { useStore, store, pushChatMessage } from '../store.js';
+import { useStore } from '../store.js';
 import { toast } from './toasts.js';
+import { t } from '../../../shared/i18n.js';
 
 export function ChatBox({ active: controlledActive, onToggle, showTrigger = controlledActive === undefined }) {
   const messages = useStore((s) => s.chatMessages) || [];
@@ -11,6 +12,9 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
   const active = controlledActive !== undefined ? controlledActive : internalActive;
   const setActive = onToggle || setInternalActive;
   const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const pending = useRef(false);
+  const composing = useRef(false);
   const inputRef = useRef(null);
   const logRef = useRef(null);
 
@@ -31,6 +35,7 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
   // Desktop Enter key trigger & Escape cancel
   useEffect(() => {
     const handleKey = (e) => {
+      if (e.isComposing || e.keyCode === 229 || e.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       if (e.key === 'Enter') {
         if (!active) {
           e.preventDefault();
@@ -50,32 +55,29 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
 
   const send = async (e) => {
     e?.preventDefault?.();
+    if (pending.current || composing.current) return;
     const text = draft.trim();
     if (!text) {
       setActive(false);
       return;
     }
-    setDraft('');
-    setActive(false);
+    pending.current = true;
+    setSending(true);
     try {
       await net.request('room.chat', { text });
+      setDraft('');
+      setActive(false);
     } catch (err) {
       console.warn('[chat] send failed', err);
       if (err?.code === 'RATE' || err?.error === 'RATE') {
-        toast('发言过于频繁，请稍候', 'warn');
-      } else if (!net.connected || !store.get().session?.entered) {
-        // 离线/单机调试模式回退
-        pushChatMessage({
-          playerId: store.get().session?.playerId || 'me',
-          name: store.get().session?.name || '博士',
-          seat: 0,
-          isSpectator: false,
-          text,
-          at: Date.now(),
-        });
+        toast(t('发言过于频繁，请稍候'), 'warn');
       } else {
-        toast(err?.msg || '发送失败，请重试', 'warn');
+        toast(err?.msg || t('发送失败，请重试'), 'warn');
       }
+      setActive(true);
+    } finally {
+      pending.current = false;
+      setSending(false);
     }
   };
 
@@ -97,12 +99,12 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
       <!-- Tactical Chat Stream (pass-through clicks, expands on hover/active) -->
       <div class="chat-log" ref=${logRef}>
         ${messages.map((m, i) => {
-          const seatLabel = m.isSpectator ? '观战' : `P${(m.seat ?? 0) + 1}`;
+          const seatLabel = m.isSpectator ? t('观战') : `P${(m.seat ?? 0) + 1}`;
           const colorCls = getSeatColorClass(m.seat, m.isSpectator);
           return html`
             <div key=${i} class="chat-item">
               <span class=${`chat-seat ${colorCls}`}>
-                [${seatLabel}] ${m.name || '博士'}:
+                [${seatLabel}] ${m.name || t('博士')}:
               </span>
               <span class="chat-text">${m.text}</span>
             </div>
@@ -118,18 +120,19 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
             type="text"
             class="chat-input"
             maxlength="80"
-            placeholder="输入对话 (Enter发送, Esc取消)..."
+            placeholder=${t('输入对话 (Enter发送, Esc取消)...')}
             value=${draft}
+            readOnly=${sending}
             onInput=${(e) => setDraft(e.target.value)}
-            onKeyDown=${(e) => e.stopPropagation()}
-            onBlur=${() => {
-              // Delay blur to allow send button touch/click
-              setTimeout(() => {
-                if (!draft) setActive(false);
-              }, 180);
+            onCompositionStart=${() => { composing.current = true; }}
+            onCompositionEnd=${() => { composing.current = false; }}
+            onKeyDown=${(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' && (e.isComposing || composing.current || e.keyCode === 229)) e.preventDefault();
+              if (e.key === 'Escape' && !sending && !composing.current) setActive(false);
             }}
           />
-          <button type="submit" class="chat-send-btn">发送</button>
+          <button type="submit" class="chat-send-btn" disabled=${sending}>${t('发送')}</button>
         </form>
       ` : (showTrigger ? html`
         <button
@@ -139,8 +142,8 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
             setActive(true);
             setTimeout(() => inputRef.current?.focus(), 30);
           }}
-          title="打开对话"
-          aria-label="打开对话"
+          title=${t('打开对话')}
+          aria-label=${t('打开对话')}
         >
           💬
         </button>

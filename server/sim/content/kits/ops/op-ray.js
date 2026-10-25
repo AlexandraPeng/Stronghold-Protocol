@@ -4,8 +4,8 @@
 // ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_4117_ray): normal = E2 Lv1, skills at rank 4, no module; elite = E2 Lv60, rank 7,
-// the picked module at stage 1 (tier 5) or 3 (tier 6) — the owner's decision of 2026-10-05. Potential 0 [ASSUMED: no
-// account]. Sources: character_table / skill_table / battle_equip_table / the token's character_table row (zh_CN, as
+// the picked module at stage 1 (tier 5) or 3 (tier 6) — the owner's decision of 2026-10-05. Full potential (the owner's
+// decision of 2026-10-07). Sources: character_table / skill_table / battle_equip_table / the token's character_table row (zh_CN, as
 // built into backups.json) and PRTS 莱伊 (巡哨伙伴 / 入神 / S1 / S2 / S3 备注), PRTS 沙地兽 (备注 "持有禁疗、无敌", "退场时返还1
 // 个可部署的沙地兽", "莱伊退场时强制撤退场上的沙地兽"; its skill "仅在持有者携带技能2时才会携带"), PRTS 分支特性信息 猎手, BWIKI
 // 莱伊 ("装填间隔即为攻击间隔，初始子弹数即为最大子弹数"), PRTS 卫戍协议/帮助 (a placed summon that leaves is deployed again on
@@ -34,7 +34,7 @@
 //   的沙地兽"]; it is untargetable (its trait text), 无敌 and 禁疗 (PRTS 备注), makes no attack (实体类型 装置) [ASSUMED], and
 //   is withdrawn when 莱伊 leaves the field (PRTS 备注). A 沙地兽 that left comes back on its tile once its redeploy time
 //   (×(1 + S2 respawn_time) while 广域警觉 runs) has passed, paying its cost (3 DP), while 莱伊 is on the field.
-// - T2 入神 "攻击相同目标时每次攻击提高自身攻击力8%，最多3层" (bb atk / max_stack_cnt; HUN-Y stage 3: 9 %, 4 layers). PRTS 备注:
+// - T2 入神 "攻击相同目标时每次攻击提高自身攻击力8%，最多3层" (full potential: 9 %; bb atk / max_stack_cnt; HUN-Y stage 3: 10 %, 4 layers). PRTS 备注:
 //   "每次攻击前：若目标与上次攻击目标不同，失去之前获得的增益；随后获得一层增益，持续时间无限" — before each attack (the special
 //   bullet of S1 too; never a reload), lost on a new target, gone when she leaves the field.
 // - S1 脱身矢 (MANUAL, 2 charges, data DEFAULT): "立即用额外特殊子弹攻击目标，造成相当于攻击力N%的物理伤害并将其中等力度地推开，
@@ -60,9 +60,10 @@
 import { num, talentBb, traitBb, skillRec, up } from '../shared/tier1.js';
 import { acquireTargets, effectiveProfile } from '../../../ai.js';
 import { sortEnemyTargets } from '../../../targeting.js';
-import { bodyInKeys } from '../../../body.js';
+import { bodyInRange } from '../../../body.js';
 import { PUSH_DIRECTIONAL_MIN_DIST } from '../../../constants.js';
 import { startCountdown } from '../../tokens.js';
+import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_ray_1';
 const S2 = 'skchr_ray_2';
@@ -159,7 +160,7 @@ export default {
               if (!target.alive) { unit.mem.rayLoadExtra = num(unit.mem.rayLoadExtra) + Math.max(0, Math.floor(num(b1.cnt, 1))); return; }
               const force = num(b1.force, 1);
               const [fr, fc] = unit.fwd;
-              const vx = target.x - unit.x, vy = target.y - unit.y, d = Math.hypot(vx, vy);
+              const vx = target.x - unit.x, vy = target.y - unit.y, d = hypot(vx, vy);
               if (d >= PUSH_DIRECTIONAL_MIN_DIST && vx * fc + vy * fr >= d * Math.SQRT1_2) battle.push(target, force, { from: unit, dir: { x: fc, y: fr }, fixed: true });
               else battle.push(target, force - 1, { from: unit });
             },
@@ -261,9 +262,9 @@ export default {
             const area = m.rayArea, prof = ctx.profile ?? unit.profile;
             const all = battle.enemiesInKeys(unit.rangeKeys, unit, prof);
             for (const e of battle.blockedTargets(unit, prof)) if (!all.includes(e)) all.push(e);
-            if (!all.some((e) => bodyInKeys(e, area))) return;
+            if (!all.some((e) => bodyInRange(e, area))) return;
             sortEnemyTargets(battle, unit, all, prof.priority ?? null);
-            const rank = (e) => (e.blockedBy === unit ? 0 : bodyInKeys(e, area) ? 1 : 2);
+            const rank = (e) => (e.blockedBy === unit ? 0 : bodyInRange(e, area) ? 1 : 2);
             const order = all.map((e, i) => ({ e, i, r: rank(e) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.e);
             ctx.targets = order.slice(0, ctx.targets.length);
           }, { owner: unit, priority: 10 });
@@ -271,7 +272,7 @@ export default {
           if (ds > 0) {
             battle.on('hit', (ctx) => {
               if (ctx.source !== unit || !m.rayArea || !ctx.target || ctx.target.side !== 'enemy' || ctx.dmg.type !== 'phys') return;
-              if (bodyInKeys(ctx.target, m.rayArea)) ctx.dmg.mul *= 1 + ds;
+              if (bodyInRange(ctx.target, m.rayArea)) ctx.dmg.mul *= 1 + ds;
             }, { owner: unit });
           }
           // S2 passive: count the bullets of her attacks that hit an enemy of the area (one per attack)
@@ -279,7 +280,7 @@ export default {
             battle.on('damaged', (ctx) => {
               const d = ctx.dmg, e = ctx.target;
               if (ctx.source !== unit || !m.rayArea || !d || !d.isAttack || !e || e.side !== 'enemy' || (d.tags && d.tags.includes(SPECIAL_TAG))) return;
-              if ((d.attackId && d.attackId === m.rayCounted) || !bodyInKeys(e, m.rayArea)) return;
+              if ((d.attackId && d.attackId === m.rayCounted) || !bodyInRange(e, m.rayArea)) return;
               m.rayCounted = d.attackId;
               m.rayBullets++;
             }, { owner: unit });

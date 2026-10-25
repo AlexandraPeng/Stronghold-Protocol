@@ -31,7 +31,7 @@ function walkMp3(dir, base = '') {
 }
 
 /**
- * Read-only check: verify that all disk voice mp3 files are mapped in data/assets.json.
+ * Read-only check: verify that the active CN/JP manifests reference existing voice files.
  * Does NOT touch or write any files.
  * @returns {{ ok: boolean, diskCount: number, manifestCount: number, missing: string[] }}
  */
@@ -42,39 +42,15 @@ export function verifyVoicesManifest() {
 
   const diskFiles = walkMp3(VOICE_DIR);
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
-  const voice = manifest?.audio?.voice || {};
-
-  // Build a set of all URLs registered in manifest
   const manifestUrls = new Set();
-  function collectUrls(obj) {
-    if (!obj || typeof obj !== 'object') return;
-    for (const val of Object.values(obj)) {
-      if (typeof val === 'string') {
-        manifestUrls.add(val);
-      } else if (Array.isArray(val)) {
-        for (const item of val) {
-          if (typeof item === 'string') manifestUrls.add(item);
-        }
-      } else if (typeof val === 'object') {
-        collectUrls(val);
-      }
-    }
+  function collectUrls(value) {
+    if (typeof value === 'string' && value.startsWith('/assets/audio/voice/')) manifestUrls.add(value);
+    else if (value && typeof value === 'object') Object.values(value).forEach(collectUrls);
   }
-  collectUrls(voice);
-
-  const missing = [];
-  for (const rel of diskFiles) {
-    const expectedUrl = `/assets/audio/voice/${rel}`;
-    // If it's a flat top-level file (e.g. char_xxx.mp3 from earlier single-voice version)
-    // or under jp/cn, check if manifest has it
-    if (!manifestUrls.has(expectedUrl)) {
-      // Also check flat char mapping compatibility
-      const baseName = path.basename(rel, '.mp3');
-      if (!voice[baseName]) {
-        missing.push(rel);
-      }
-    }
-  }
+  collectUrls(manifest.audio?.voice);
+  collectUrls(manifest.audio?.voiceJp);
+  // Only referenced files enter the game. Old cached lines need not be forced into the new named-line schema.
+  const missing = [...manifestUrls].filter(url => !fs.existsSync(path.join(ROOT, 'public', url.split(/[?#]/)[0])));
 
   return {
     ok: missing.length === 0,
@@ -104,39 +80,18 @@ export function syncVoicesManifest() {
     } catch {}
   }
 
+  if (!structure || (!structure.jp && !structure.cn)) {
+    throw new Error('Named bilingual voice cache required; a flat file index cannot replace the 0.2.6 voice schema.');
+  }
+  manifest.audio.voice = { ...(manifest.audio.voice || {}), ...(structure.cn || {}) };
+  manifest.audio.voiceJp = { ...(manifest.audio.voiceJp || {}), ...(structure.jp || {}) };
   let count = 0;
-  if (structure && (structure.jp || structure.cn)) {
-    manifest.audio.voice = {
-      jp: structure.jp || {},
-      cn: structure.cn || {},
-    };
-
-    // Calculate count
-    for (const lang of ['jp', 'cn']) {
-      for (const charId of Object.keys(manifest.audio.voice[lang] || {})) {
-        const slots = manifest.audio.voice[lang][charId];
-        for (const v of Object.values(slots)) {
-          count += Array.isArray(v) ? v.length : 1;
-        }
-        // Also provide primary entry in manifest.chars for backwards compatibility
-        if (lang === 'jp' && manifest.chars && manifest.chars[charId]) {
-          const primary = slots.place || slots.start || slots.skill1;
-          const primaryUrl = Array.isArray(primary) ? primary[0] : primary;
-          if (primaryUrl) manifest.chars[charId].voice = primaryUrl;
-        }
-      }
-    }
-  } else {
-    // Fallback: flat or directory scanning
-    if (!manifest.audio.voice) manifest.audio.voice = {};
-    const diskFiles = walkMp3(VOICE_DIR);
-    for (const rel of diskFiles) {
-      const relPath = `/assets/audio/voice/${rel}`;
-      manifest.audio.voice[rel] = relPath;
-      count++;
+  for (const bank of [manifest.audio.voice, manifest.audio.voiceJp]) {
+    for (const [id, slots] of Object.entries(bank)) {
+      if (!/^char_\d+_[a-z0-9]+$/.test(id) || !slots || typeof slots !== 'object') { delete bank[id]; continue; }
+      for (const value of Object.values(slots)) count += Array.isArray(value) ? value.length : 1;
     }
   }
-
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest), 'utf8');
   console.log(`[sync-voices-manifest] 已将 ${count} 条双语语音清单写入 ${MANIFEST_PATH}`);
   return { count, path: MANIFEST_PATH };
@@ -150,7 +105,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   } else {
     const res = verifyVoicesManifest();
     if (!res.ok) {
-      console.error(`✘ [sync-voices-manifest] 校验失败: 发现 ${res.missing.length} 个本地语音未在 data/assets.json 中注册:`);
+      console.error(`✘ [sync-voices-manifest] 校验失败: 发现 ${res.missing.length} 个已登记语音文件在磁盘缺失:`);
       console.error(`  缺少: ${res.missing.slice(0, 5).join(', ')}${res.missing.length > 5 ? '...' : ''}`);
       console.error(`  如需同步写入，请运行: node tools/sync-voices-manifest.mjs --write`);
       process.exit(1);

@@ -3,7 +3,7 @@
 // Kit contract and the 自选 rules: ../README.md ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_4204_mantra, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, PRI-X at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
+// elite = E2 Lv60, rank 7, PRI-X at stage 1 (tier 5) or 3 (tier 6). Full potential (the owner's decision of 2026-10-07).
 // Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json) and PRTS 真言 (the 备注
 // quoted below). 麻痹 (ba.palsy, PRTS 术语释义): each stack interrupts one normal attack of an enemy, at most 3, kept until
 // used — the engine `palsy` status; the moment a stack interrupts an attack is the engine hook `palsyTrigger` (ai.js).
@@ -11,11 +11,12 @@
 //   targetable by ground enemies); 元素伤害 = the DamageInfo type 'elemental', 神经 损伤 = element 'neural' (SIM.md §3). PRI-X
 //   “中枢神经探测模块” "对处于元素爆发期间的敌人造成的伤害提升至110%" (trait bb damage_scale): ×damage_scale on every damage
 //   she deals to an enemy in an element burst (shared/tier5.js burstDamageUp, as 烛煌 / 妮芙).
-// - T1 噤声限域 "场上敌人触发麻痹效果时立即受到相当于真言攻击力135%的元素伤害，且触发麻痹时有10%概率不消耗麻痹层数" (bb
-//   atk_scale / prob; PRI-X stage 3: 1.6 / 0.15): 备注 "触发麻痹时指的是敌人的攻击被麻痹打断时（而非获得麻痹时）", "造成的元素
-//   伤害为元素持续伤害" (tagged 'dot'), "全场光环存在0.5秒检测周期，单位无法被真言选择的情况下将失去效果" (every 0.5 s the
-//   enemies she can select — not untargetable, 隐匿 or asleep; "三技能期间，此天赋的检测无视隐匿与沉睡" — carry her mark),
-//   "麻痹不消耗效果在同类效果中取概率最高" (two 真言: one roll at the higher chance; each deals her own hit [ASSUMED]).
+// - T1 噤声限域 "场上敌人触发麻痹效果时立即受到相当于真言攻击力135%的元素伤害，且触发麻痹时有10%概率不消耗麻痹层数" (full
+//   potential: 145 % / 13 %; bb atk_scale / prob; PRI-X stage 3: 1.7 / 0.18): 备注 "触发麻痹时指的是敌人的攻击被麻痹打断时
+//   （而非获得麻痹时）", "造成的元素伤害为元素持续伤害" (tagged 'dot'), "全场光环存在0.5秒检测周期，单位无法被真言选择的情况下
+//   将失去效果" (every 0.5 s the enemies she can select — not untargetable, 隐匿 or asleep; "三技能期间，此天赋的检测无视
+//   隐匿与沉睡" — carry her mark), "麻痹不消耗效果在同类效果中取概率最高" (two 真言: one roll at the higher chance; each deals
+//   her own hit [ASSUMED]).
 // - T2 全局洞悉 "距离真言最近的一个侵入点出场的敌人出现时立刻获得1层麻痹": at each deployment she picks the 侵入点 (the
 //   stage's 'start' tiles) nearest by Manhattan distance, a tie drawn at random (备注 "优先选取距离自身曼哈顿距离最近的侵入点，
 //   相同距离下随机选取"); every enemy spawning on it gets 1 麻痹 0.1 s later (备注 "【延迟麻痹】：0.1s后获得1层麻痹；付与选取
@@ -43,8 +44,10 @@ import { elementDmg } from '../shared/tier6.js';
 import { burstDamageUp } from '../shared/tier5.js';
 import { hasHp } from '../../../damage.js';
 import { canTargetEnemy, enemyStealthed } from '../../../targeting.js';
-import { bodyInKeys } from '../../../body.js';
+import { bodyInRange } from '../../../body.js';
 import { COLS, PALSY_MAX } from '../../../constants.js';
+import { burstLimit } from '../../../../../shared/plugins/steps.js';
+import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_mantra_1';
 const S2 = 'skchr_mantra_2';
@@ -74,6 +77,7 @@ function setPalsy(battle, e, n) {
   if (n <= 0) battle.removeBuff(e, b);
   else { b.stacks = n; e.markDirty(); }
 }
+// 【麻痹付与】 takes the enemy's tile (PRTS 备注: 格子判定), unlike the reveal and the overflow (碰撞判定: bodyInRange)
 const tileIn = (e, set) => set.has(Math.round(e.y) * COLS + Math.round(e.x));
 
 /** The S1 / S2 riders: share × the damage dealt as 神经 损伤, then elemScale × ATK 元素伤害 on a target in its 神经 burst. */
@@ -90,7 +94,7 @@ function nearestFoe(battle, unit, x, y, r, skip) {
   let best = null, bd = Infinity;
   for (const e of battle.enemiesInRadius(x, y, r)) {
     if (skip.has(e) || !canTargetEnemy(unit, e, ANY)) continue;
-    const d = Math.hypot(e.x - x, e.y - y);
+    const d = hypot(e.x - x, e.y - y);
     if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && best && e.spawnSeq < best.spawnSeq)) { bd = d; best = e; }
   }
   return best;
@@ -155,7 +159,10 @@ export default {
     }
     /** `e` leaves the overflow (range, fall, skill end): every 溢出麻痹 left bounces at once. */
     function flush(battle, unit, e, rec) {
-      while (rec.over > 0) { rec.over--; bounce(battle, unit, e); }
+      let guard = 0;
+      const limit = burstLimit(PALSY_MAX);
+      while (rec.over > 0 && guard++ < limit) { rec.over--; bounce(battle, unit, e); } // loop-cap: burstLimit palsy
+      if (rec.over > 0) rec.over = 0;
     }
     /** 真言's own 麻痹 (S3 grants, 全局洞悉): a 麻痹免疫 enemy keeps them (ineffective) for the overflow count. */
     function givePalsy(battle, unit, e, n) {
@@ -216,7 +223,7 @@ export default {
             if (!st || !set) return;
             const seen = new Set();
             for (const e of battle.enemies) {
-              if (!e.alive || e.hidden || !bodyInKeys(e, set)) continue;
+              if (!e.alive || e.hidden || !bodyInRange(e, set)) continue;
               seen.add(e);
               // 【反隐】 (隐匿免疫) on her range
               if (e.s.flags.stealth) battle.applyStatus(e, 'reveal', { duration: 2 * dt + 0.05, source: unit });

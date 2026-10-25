@@ -3,7 +3,7 @@
 // Kit contract and the 自选 rules: ../README.md ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_4121_zuole, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
+// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Full potential (the owner's decision of 2026-10-07).
 // Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json); PRTS 左乐 (S2 / S3
 // 备注); the client's buff templates (buff_template_data `zuole_trait`, `zuole_t_2`, `zuole_s_2[shield]` /
 // `[shield_core]`, `zuole_s_3` / `[shield]`, `zuole_e_002[resistance]`, `zuole_e_003_talent`, `zuole_e_003_trait`);
@@ -15,10 +15,10 @@
 //   min_attack_speed / min_sp_recovery_per_sec / min_hp_ratio): 坚忍 (ba.berserk "根据已损失的生命值获得相应比例的属性
 //   加成") — ASPD and SP recovery × min(1, lost HP ÷ (1 − min_hp_ratio)) while he is deployed. SBL-X stage 3: +70 /
 //   +2.3 / at 50 % lost (the module talent's bb).
-// - T2 守正自明 "攻击时有20%的概率获得1点技力，生命低于50%时概率变为70%" (bb prob_1 / prob_2 / hp_ratio / sp): zuole_t_2
-//   rolls on every damage he outputs (ON_OUTPUT_DAMAGE — skill damage too), prob_2 below hp_ratio. SBL-Y stage 3
-//   (zuole_e_003_talent, ON_CALCULATE_DAMAGE): "…且当次攻击的攻击力提升至120%…80%": a success also scales that damage
-//   instance by atk_scale.
+// - T2 守正自明 "攻击时有20%的概率获得1点技力，生命低于50%时概率变为70%" (full potential: 23 % / 75 %; bb prob_1 / prob_2 /
+//   hp_ratio / sp): zuole_t_2 rolls on every damage he outputs (ON_OUTPUT_DAMAGE — skill damage too), prob_2 below hp_ratio.
+//   SBL-Y stage 3 (zuole_e_003_talent, ON_CALCULATE_DAMAGE): "…且当次攻击的攻击力提升至120%…80%" (full potential: 85 %): a
+//   success also scales that damage instance by atk_scale.
 // - Module SBL-X “岂苦夜长” (trait moduleDesc "生命值低于50%时，获得25%的庇护"; the hidden part merged into the first talent's
 //   bb: hp_ratio / damage_resistance): 庇护 (ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）": the shared effect of
 //   every source, tier1.js holdProtect) while HP < hp_ratio
@@ -48,6 +48,7 @@
 //   时间为15s").
 
 import { num, talentBb, traitBb, up, onHitBy, onHitOn, giveSp, skillRec, holdProtect, PROTECT, PROTECT_TICK_HOLD } from '../shared/tier1.js';
+import { bbCap } from '../../../../../shared/plugins/officialBounds.js';
 import { absoluteRangeKeys, sortEnemyTargets } from '../../../targeting.js';
 import { isHpLoss } from '../../../damage.js';
 import { holdsUndying } from '../../items/battle.js';
@@ -142,7 +143,8 @@ export default {
           onStart({ battle, unit }) {
             const grid = s3?.rangeGrid?.length ? s3.rangeGrid : [[0, 0], [0, 1], [0, 2], [0, 3]];
             const keys = absoluteRangeKeys(grid, unit.tileR, unit.tileC, unit.dir, 0);
-            const times = Math.max(1, Math.floor(num(b3.times, 7)));
+            // [ASSUMED] DESIGN §32.5: a bypass that never ran validateData still cannot loop 1e9 times. Official is 7.
+            const times = Math.min(bbCap('times'), Math.max(1, Math.floor(num(b3.times, 7))));
             battle.fx('aoe', { x: unit.x + 1.5 * unit.fwd.x, y: unit.y + 1.5 * unit.fwd.y, radius: 1, id: unit.id, skill: 'zuole:slash' });
             unit.mem.zuoleS3 = true;
             try {

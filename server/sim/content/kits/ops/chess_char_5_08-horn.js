@@ -43,14 +43,14 @@ export default {
             onHit({ battle, unit, x, y }) {
               if (!unit.mem.hornFlare) return;
               unit.mem.hornFlare = false;
-              (unit.mem.flares = unit.mem.flares ?? []).push({ x, y, until: battle.time + num(bb.projectile_delay_time, 6) });
+              (unit.mem.flares ??= []).push({ x, y, until: battle.time + num(bb.projectile_delay_time, 6) });
               battle.fx('zone', { x, y, id: unit.id, r: num(bb.projectile_range, 1.7), duration: num(bb.projectile_delay_time, 6) });
             },
           },
         }),
         skchr_horn_2: () => ({
           kind: 'ammo', ammo: s2Ammo,
-          attack: { atkScale: num(bb['attack@s2.atk_scale'], 1) },
+          attack: { atkScale: num(bb['attack@s2.atk_scale'], 1), fortressMeleeSplash: true },
           onStart({ unit }) { unit.mem.hornS2Over = false; },
           onEnd({ unit }) { unit.mem.hornS2Over = false; },
         }),
@@ -69,7 +69,7 @@ export default {
           }
           if (!unit.mem.overload || !(ovPeak > 0)) return;
           unit.mem.hornAcc += dt;
-          while (unit.mem.hornAcc >= ovIv && unit.alive) {
+          while (unit.mem.hornAcc >= ovIv && unit.alive) { // loop-cap: interval floored before the loop
             unit.mem.hornAcc -= ovIv;
             const rate = ovPeak * Math.min(1, (unit.mem.hornT - main) / ovRamp);
             if (rate > 0) battle.loseHp(unit, unit.s.maxHp * rate * ovIv, { source: unit, silent: true });

@@ -15,6 +15,7 @@
 // chess's ids, so its kit must be looked up by its `charId`, never by `baseId` (that is the replaced operator's kit).
 
 import { composeStats, composeTalents } from './loadoutRecord.js';
+import { stripPotential } from './potential.js';
 
 /** The key of a unit form: a chess record's `status` as `${phase}/${level}/${skillLevel}/${equipLevel}`. */
 export function statusKey(status) {
@@ -44,7 +45,9 @@ const byNatural = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: 
  * The same rules as tools/build-data.mjs buildChess: stats = form stats + the module's `attr`, trait = the module's
  * `traitOverride` or the form's, talents = form talents + the module's `talentChanges`; `module` is active only when
  * `status.equipLevel > 0` and the module has that level; an elite with `equipLevel > 0` carries
- * `statsBase` / `traitBase` / `talentsBase` / `modules[]`; `tokens` are the summons the selection produces.
+ * `statsBase` / `traitBase` / `talentsBase` / `modules[]`; `tokens` are the summons the selection produces. The record is
+ * composed at ONE potential: pass the form at the wanted potential (shared/potential.js atPotential — a stand-in has none)
+ * and the result carries no potential annotation (`potDown`, chained talents).
  * @param {object} identity the data/chess.json record whose identity the unit takes (IDENTITY_FIELDS)
  * @param {object} unit backups.units[charId]
  * @param {object} form backups.units[charId].forms[statusKey(identity.status)]
@@ -63,7 +66,7 @@ export function composeUnitRecord(identity, unit, form, { skillIndex, moduleId =
   const skill = skills.find((s) => s && s.index === skillIndex) ?? null;
   const mods = Array.isArray(form.modules) ? form.modules : null;
   const mod = moduleId && mods ? mods.find((m) => m && m.uniEquipId === moduleId) ?? null : null;
-  const talents = mod ? composeTalents(form.talents, mod.talentChanges) : form.talents;
+  const talents = composeTalents(form.talents, mod ? mod.talentChanges : null);
   // summons: listed by the character, produced by the selected skill or a talent (buildChess `tokens`)
   const known = new Set(form.tokens || []);
   const tokenIds = new Set([...(form.displayTokens || []), skill?.overrideTokenKey, ...(talents || []).map((t) => t?.tokenKey)]
@@ -79,6 +82,9 @@ export function composeUnitRecord(identity, unit, form, { skillIndex, moduleId =
     immunities: form.immunities, rangeId: form.rangeId, rangeGrid: form.rangeGrid,
     dmgType: form.dmgType, attackKind: form.attackKind, projectile: form.projectile, canHitFly: form.canHitFly,
     targetPriority: form.targetPriority,
+    // The Chinese branch trait as a boolean (build-data). A localized form keeps it after the trait text is
+    // translated, so a 自选 推击手 still stands on a 高台 (GitHub #676). Absent when the form has no flag.
+    ...(form.placeOnRanged === true ? { placeOnRanged: true } : {}),
     trait: (mod && mod.traitOverride) || form.trait,
     skill: skill ? { ...skill } : null,
     talents,
@@ -87,17 +93,20 @@ export function composeUnitRecord(identity, unit, form, { skillIndex, moduleId =
       ? { id: moduleId, name: info?.name ?? null, type: info?.typeName ?? null, level: equipLevel, active: equipLevel > 0 && !!mod }
       : (equipLevel > 0 ? { id: null, name: null, type: null, level: equipLevel, active: false } : null),
     assets: {
-      avatar: golden ? a.avatarGolden : a.avatar, portrait: golden ? a.portraitGolden : a.portrait, spine: a.spine,
-      skillIcon: skill?.iconId || null, subProfIcon: a.subProfIcon,
+      avatar: golden ? a.avatarGolden : a.avatar, portrait: golden ? a.portraitGolden : a.portrait, spine: golden ? a.spineGolden ?? a.spine : a.spine,
+      skillIcon: (golden ? a.skillIconGolden : null) ?? a.skillIcon ?? skill?.iconId ?? null,
+      subProfIcon: golden ? a.subProfIconGolden ?? a.subProfIcon : a.subProfIcon,
+      ...(a.voice || a.voiceGolden ? { voice: golden ? a.voiceGolden ?? a.voice : a.voice } : {}),
     },
     skills: skills.map((s) => ({ ...s, isDefault: s.index === skillIndex })),
   });
   if (golden && equipLevel > 0) {
     out.statsBase = form.stats;
     out.traitBase = form.trait;
-    out.talentsBase = form.talents;
-    out.modules = (mods || []).map((m) => ({ ...m, isDefault: m.uniEquipId === moduleId }));
+    out.talentsBase = stripPotential(form.talents);
+    out.modules = (mods || []).map((m) => ({ ...stripPotential(m), isDefault: m.uniEquipId === moduleId }));
   }
+  for (const k of ['kitRef', 'skillSpec', 'talentMods', 'dsl', 'pluginId', 'origin']) if (Object.hasOwn(form, k) || Object.hasOwn(unit, k)) out[k] = form[k] ?? unit[k];
   if (standInFor) out.standInFor = standInFor;
   return out;
 }
@@ -118,9 +127,9 @@ export function isDroppableChess(chess) {
 
 /**
  * The 补位 record of a chess: a NORMAL chess (normal or elite) fielded as its official stand-in — `backup.charId` at
- * the chess's own status, skill `backup.skillIndex`, module `backup.uniEquipId` (none when null), potential 0 — with
- * the chess's bonds, 特质, tier, price and merge. Null for a PRESET (特许: always the real operator) or DIY chess, or
- * when the data lacks the unit / form.
+ * the chess's own status, skill `backup.skillIndex`, module `backup.uniEquipId` (none when null), full potential like
+ * every unit form (the 原型干员 have no potential ranks) — with the chess's bonds, 特质, tier, price and merge. Null for a
+ * PRESET (特许: always the real operator) or DIY chess, or when the data lacks the unit / form.
  * @param {object} chess data/chess.json record
  * @param {object} backups data/backups.json
  */

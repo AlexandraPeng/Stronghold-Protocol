@@ -9,9 +9,11 @@
 //     'lock' it plays 蕾缪安's S3 as the sim does (a lock every 0.5 s, then one shell every 0.3 s with its bombard)
 // Query: ?scene=prep|<recording>|stress|numbers &stage=<stageId> &t=<seconds> &speed=<x> &paused=1 &panel=0 &quality=high|medium|low
 //        &pen=<recording> (prep: that recording's round preview — m.private.nextEnemies — in the enemy preview pen)
+//        &ops=<chessId>,… (stress: up to 6 given chess in the crowd's front row, ids 6, 8, 10, …)
 //        &fa=L|R (prep on that half of the Final Assault boss field, view.setCamera('bossPrep', { side }))
 //        &board=2d|3d (the official 3D board scene, DESIGN §15; default 3D when the local art + WebGL2 are available)
 //        &cam=prep|normal|unite|boss|pen|bossPrep [&side=L|R &half=1 &shop=0] (official configBlackBoard framings)
+//        &fx=auto|off|lite|full (设置「官方特效」, default auto as in the game; off shows only the procedural effects)
 // Puppeteer hook: window.__demo = { ready, view, seek(t), play(), pause(), setScene(name), stats(), log,
 //   refuseDrops (true ⇒ prep drops are silently ignored, like a server that rejects the move) }
 
@@ -45,7 +47,7 @@ async function main() {
   await assets.ready();
   const index = await fetch('/dev/recordings/index.json').then((r) => (r.ok ? r.json() : []), () => []);
   const view = await createFieldView($('field'), {
-    data, assets, settings: { quality: q.get('quality') || 'high', damageNumbers: true },
+    data, assets, settings: { quality: q.get('quality') || 'high', damageNumbers: true, ...(q.has('fx') ? { officialFx: q.get('fx') } : {}) },
     ...(q.has('aa') ? { antialias: q.get('aa') !== '0' } : {}),
   });
   demo.view = view;
@@ -162,7 +164,7 @@ async function prepScene(view, stageId, index = []) {
   const deploy = stage?.deployTiles?.normal || { melee: [], rangedOnly: [] };
   const meleeTiles = deploy.melee.slice().sort((a, b) => a[0] - b[0] || b[1] - a[1]);
   const rangedTiles = [...(deploy.rangedOnly || []), ...meleeTiles.slice().reverse()];
-  const state = { hand: Array(10).fill(null), temp: Array(5).fill(null), board: [], nextEnemies };
+  const state = { hand: Array(q.get('bench') === '20' ? 20 : 10).fill(null), temp: Array(5).fill(null), board: [], nextEnemies };
   const taken = new Set();
   const place = (c) => {
     const list = c.position === 'MELEE' ? meleeTiles : rangedTiles;
@@ -178,6 +180,7 @@ async function prepScene(view, stageId, index = []) {
   handNames.forEach((n, i) => { const c = pick(n); if (c) state.hand[i] = P(c); });
   if (items[0]) state.hand[6] = { uid: uid++, kind: 'item', id: items[0].id, golden: false, tier: items[0].tier };
   if (items[12]) state.hand[7] = { uid: uid++, kind: 'item', id: items[12].id, golden: false, tier: items[12].tier };
+  if(state.hand.length===20) {state.hand[19]=P(pick('斯卡蒂') || chess[0]);state.hand[10]={uid:uid++,kind:'item',id:'blackforest_rogue_6_relic_assign_9',tier:3};}
   const tok = data.list('tokens').find((t) => t.kind === 'summon' && t.displayType === 'DEFAULT');
   if (tok) state.hand[8] = { uid: uid++, kind: 'token', id: tok.tokenId, golden: false, tier: 1, count: 3 };
   const c1 = pick('角峰'), c2 = pick('格雷伊');
@@ -186,7 +189,7 @@ async function prepScene(view, stageId, index = []) {
 
   let editable = true;
   const find = (u) => {
-    for (let i = 0; i < 10; i++) if (state.hand[i]?.uid === u) return { area: 'hand', idx: i, piece: state.hand[i] };
+    for (let i = 0; i < state.hand.length; i++) if (state.hand[i]?.uid === u) return { area: 'hand', idx: i, piece: state.hand[i] };
     for (let i = 0; i < 5; i++) if (state.temp[i]?.uid === u) return { area: 'temp', idx: i, piece: state.temp[i] };
     const b = state.board.find((p) => p.uid === u);
     return b ? { area: 'board', piece: b } : null;
@@ -252,6 +255,8 @@ async function prepScene(view, stageId, index = []) {
     }),
     view.on('pieceClick', (e) => log('pieceClick', { uid: e.uid, detail: e.detail })),
     view.on('pieceDragStart', (e) => { view.highlightTiles(null); log('pieceDragStart', { uid: e.uid, from: e.from }); }),
+    view.on('pieceDragEnd', (e) => log('pieceDragEnd', { uid: e.uid, dropped: e.dropped })),
+    view.on('tileHover', (e) => { if (new URLSearchParams(location.search).has('bench')) log('tileHover', e); }),
     // hover a board operator ⇒ its attack range (orange) + its tile (mint), like the original
     view.on('pieceHover', (e) => {
       view.highlightTiles(null);
@@ -366,12 +371,16 @@ function stressScene(view, stageId) {
   const rect = { r0: 9, r1: 12, c0: 0, c1: 20 };
   const chess = data.list('chess').filter((c) => c.visible && !c.isGolden);
   const enemies = data.list('enemies').filter((e) => assets.spineEntry(e.key) && e.rank !== 'BOSS');
+  // &ops=<chessId>,… : these chess take every other place of the front row from col 7 (ids 6, 8, 10, …) — given models
+  // inside a crowded, impostor-rendered field, clear of the screen edge (GitHub #542: impostor-bounds.browser.test.js)
+  const ops = (q.get('ops') || '').split(',').map((s) => data.lookup('chess', s.trim())).filter(Boolean);
+  const opAt = (i) => (i >= 5 && i % 2 === 1 && i < 17 ? ops[(i - 5) / 2] : null);
   let seed = 7;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   const units = [];
   let id = 1;
   for (let i = 0; i < 40; i++) {
-    const c = chess[(i * 7) % chess.length];
+    const c = opAt(i) || chess[(i * 7) % chess.length];
     units.push({ id: id++, kind: 'op', side: 'ally', defId: c.chessId, name: c.name, tier: c.tier, golden: i % 6 === 0, spine: c.assets?.spine, avatar: c.assets?.avatar, x: 2 + (i % 17), y: 9 + ((i / 17) | 0) % 4, facing: 1, maxHp: 3000 });
   }
   for (let i = 0; i < 80; i++) {
@@ -463,7 +472,7 @@ function fxScene(view, stageId) {
   };
   // `pt` kinds name the shooter in `id` and happen at an enemy's spot; a 'flame' happens at its target
   const posFor = (k, ex) => unitAt(FX_KINDS[k].pt ? [21, 23, 20][i % 3] : FX_KINDS[k].a === 'flame' ? ex.target : ex.id);
-  // 蕾缪安 S3 as the sim plays it (sim/content/kits/tier6.js): a lock every 0.5 s, then after the skill one shell every
+  // 蕾缪安 S3 as the sim plays it (sim/content/kits/ops/chess_char_6_01-lemuen.js): a lock every 0.5 s, then after the skill one shell every
   // 0.3 s on the locks in order, each landing 0.3 s later with its bombard — queued [game time, event]
   const queue = [];
   const lemuenS3 = () => {

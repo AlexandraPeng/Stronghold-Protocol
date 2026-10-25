@@ -5,7 +5,7 @@
 // cannot walk/attack/be blocked, but remains damageable;
 // its boundary clearance 0.4, carriage updates once per sim tick, vortex ends with the skill;
 // S3 first bombardment at 0.5 s, then twice at 1 s intervals, launched shots survive skill end.
-// These pending confirmations are listed in docs/research/extra-diy.md; keep each assumption local to this kit.
+// These pending confirmations are listed in DESIGN §28.1; keep each assumption local to this kit.
 
 import { num, talentBb, skillRec, up } from '../shared/tier1.js';
 import { absoluteRangeKeys, canTargetEnemy } from '../../../targeting.js';
@@ -18,7 +18,7 @@ const S1 = 'skchr_clemnt_1', S2 = 'skchr_clemnt_2', S3 = 'skchr_clemnt_3';
 const GROUND = Object.freeze({ canHitFly: false, groundOnly: true });
 const AIR = Object.freeze({ canHitFly: true });
 const SPEED = 2, DISTANCE = 3, CATCH_HALF = 0.55, VORTEX_RADIUS = 1.5;
-const SPLASH_RADIUS = 1.1; // PRTS 2026-10-10: collision test; four secondary targets take 100% ATK.
+const SPLASH_RADIUS = 1.1; // PRTS 2026-10-10: collision test (foesInColliderRadius); four secondary targets take 100% ATK.
 const FIRST_BOMB = 0.5; // [ASSUMED] Neither PRTS nor the edited official demo settles the first landing offset.
 const CAST = 'clemnt:cast', CARRY = 'clemnt:carry:';
 const skillBb = (raw, id) => skillRec(raw, id)?.bb ?? {};
@@ -159,7 +159,7 @@ export default {
               if (kind !== 'main' || !target) return;
               // Main victim plus at most four neighbours, never every unit in the radius.
               // [ASSUMED] Ties among splash victims follow the engine's stable spawn order.
-              const near = battle.foesInRadius(target.x, target.y, SPLASH_RADIUS)
+              const near = battle.foesInColliderRadius(target.x, target.y, SPLASH_RADIUS)
                 .filter((e) => e !== target && canTargetEnemy(unit, e, GROUND))
                 .slice(0, Math.max(0, num(b2['attack@max_target'], 5) - 1));
               for (const e of near) battle.dealDamage(unit, e, {
@@ -216,12 +216,13 @@ export default {
           // Maintainer 2026-10-10 (#467): follow Chen S3 automation. The vortex hits air while normal attacks do not.
           // [ASSUMED] No mode footage establishes a separate auto-cast shape for this new operator; use the expanded
           // skill attack grid with permanent extensions, retaining shared operation cooldown/control checks.
-          unit.skill.addTriggerRange(() => [
-            absoluteRangeKeys(skillRec(raw, S2)?.rangeGrid, unit.tileR, unit.tileC, unit.dir, unit.s.baseRangeExtend || 0),
-          ]);
+          unit.skill.addTriggerRange(() => [{
+            keys: absoluteRangeKeys(skillRec(raw, S2)?.rangeGrid, unit.tileR, unit.tileC, unit.dir, unit.s.baseRangeExtend || 0),
+            profile: AIR,
+          }]);
         }
         battle.on('elementBurst', ({ target, element }) => {
-          if (element !== 'erosion' || !up(unit) || !unit.skill?.active || unit.skill.id !== S3
+          if (element !== 'erosion' || target?.side !== 'enemy' || !up(unit) || !unit.skill?.active || unit.skill.id !== S3
             || !canTargetEnemy(unit, target, GROUND)) return;
           unit.mem.clemntBombs?.marks.set(target, battle.time + num(b3.ep_break_duration, 1));
         }, { owner: unit });

@@ -3,7 +3,7 @@
 // Kit contract and the 自选 rules: ../README.md ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_4235_thumpy, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, PRP-X at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
+// elite = E2 Lv60, rank 7, PRP-X at stage 1 (tier 5) or 3 (tier 6). Full potential (the owner's decision of 2026-10-07).
 // Sources: character_table / skill_table / battle_equip_table (zh_CN, as built into backups.json), gamedata_const
 // ba.dt.erosion2 侵蚀损伤·我方 / ba.barrier 屏障 / ba.sluggish 停顿, PRTS 珊比 (talent 备注 "每次珊比成功造成伤害后，产生侵蚀
 // 损伤/冷却减少效果；且实际上侵蚀损伤与冷却减少为互斥的效果…侵蚀损伤爆发期间将改为减少当前爆发持续时间", "每次珊比成功造成伤害后，
@@ -17,12 +17,13 @@
 //   own tile (range 0-1). Module PRP-X 出发的勇气 adds "阻挡敌人时，自身造成的元素损伤提升15%" (trait bb ep_damage_scale):
 //   every element fill she deals ×ep_damage_scale while she blocks — an `elementHit` multiplier (the kits' convention: 菲莱 /
 //   余 PRP-X).
-// - T1 探险理论: "珊比受到的元素损伤降低15%" (ep_damage_scale 0.85): an `elementHit` multiplier on her at priority 20 (the
-//   operators' 受到的元素损伤 convention, docs/SIM.md §7.2). "珊比造成物理伤害时，附带攻击力10%的侵蚀损伤，并使目标的侵蚀损伤冷却减少
-//   1秒" (ep_damage_ratio[trigger] / duration_dec): after each physical damage instance of hers that removes HP — attacks,
-//   the glue and conveyor ticks too ("每次珊比成功造成伤害后") — ep_damage_ratio[trigger] × ATK 侵蚀损伤 on the target, or,
-//   while its 侵蚀 burst (爆发冷却) runs, that cooldown −duration_dec s instead. The skills' own ep_damage_ratio[trigger] 0
-//   is read as their ability carrying no rider of its own [ASSUMED: PRTS names no exception to the talent].
+// - T1 探险理论: "珊比受到的元素损伤降低15%" (full potential: 20%; ep_damage_scale 0.8): an `elementHit` multiplier on her at
+//   priority 20 (the operators' 受到的元素损伤 convention, docs/SIM.md §7.2). "珊比造成物理伤害时，附带攻击力10%的侵蚀损伤，
+//   并使目标的侵蚀损伤冷却减少1秒" (full potential: 12%, 1.2秒; ep_damage_ratio[trigger] / duration_dec): after each physical damage
+//   instance of hers that removes HP — attacks, the glue and conveyor ticks too ("每次珊比成功造成伤害后") — ep_damage_ratio[trigger]
+//   × ATK 侵蚀损伤 on the target, or, while its 侵蚀 burst (爆发冷却) runs, that cooldown −duration_dec s instead. The skills' own
+//   ep_damage_ratio[trigger] 0 is read as their ability carrying no rider of its own [ASSUMED: PRTS names no exception to the
+//   talent].
 // - T2 坚硬脚板: her HP damage marks the enemy (【脚板标记】, kept through a 重生, cleared when she leaves the field); a marked
 //   enemy's 侵蚀 burst — whoever filled it — gives her one stack of DEF +def (PRP-X stage 3: and ATK +atk; flat, at most
 //   max_stack_cnt, until she leaves the field [ASSUMED]) and shield_value 屏障 (one barrier buff: a further trigger adds to
@@ -49,7 +50,7 @@
 
 import { num, talentBb, traitBb, skillRec, up } from '../shared/tier1.js';
 import { offsetTile, frontOf, dirVec } from '../../../dir.js';
-import { bodyInKeys } from '../../../body.js';
+import { bodyInKeys, bodyInRange } from '../../../body.js';
 import { enemyStealthed, tileKeyOf } from '../../../targeting.js';
 import { hasHp } from '../../../damage.js';
 import { COLS } from '../../../constants.js';
@@ -107,7 +108,7 @@ function glueTiles(battle, unit, count) {
   } else {
     for (const d of [LEFT, RIGHT]) spray(...near([0, 0], d));
   }
-  while (list.length < count) {
+  while (list.length < count) { // loop-cap: spray stops when every tile is spread
     let at = null;
     for (let i = list.length - 1; i >= 0; i--) if (!list[i].spread) { at = list[i]; break; }
     if (!at) break;
@@ -176,6 +177,8 @@ export default {
         },
         [S2]: {
           kind: 'duration',
+          // [ASSUMED] its glue / belt act on ground enemies only: 白铁's 铁钳号 alone does not open it (skills.js allyTargetsOk)
+          allyTargets: false,
           // the owner's rule for a skill whose area is larger than her range (her tile): cast as soon as a ground enemy she
           // can affect is on the glue's first five tiles — her tile, the front one, its two sides and the one beyond
           // (glueTiles' PRTS order), as 余 S2's x-1 (§22.10); the data's DEFAULT (重装 exception) only saw her own tile
@@ -193,12 +196,13 @@ export default {
             if (!g) return;
             const iv = Math.max(0.05, num(b2.interval, 0.7));
             g.acc += dt;
-            while (g.acc + 1e-9 >= iv && unit.alive) { g.acc -= iv; gluePulse(battle, unit, g.keys); }
+            while (g.acc + 1e-9 >= iv && unit.alive) { g.acc -= iv; gluePulse(battle, unit, g.keys); } // loop-cap: interval floored before the loop
           },
           onEnd({ unit }) { unit.mem.thumpyGlue = null; },
         },
         [S3]: {
           kind: 'duration',
+          allyTargets: false,
           // likewise on the conveyor: her tile and the four ahead (the owner's larger-area rule; 余 S2 precedent)
           trigger: { rule: 'ACTIVE_RANGE', grid: [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]] },
           mods: nz({ atkPct: num(b3.atk), defPct: num(b3.def), blockCnt: num(b3.block_cnt) }),
@@ -224,7 +228,7 @@ export default {
             carry(battle, unit, belt, dt);
             const iv = Math.max(0.05, num(b3.interval, 1));
             belt.acc += dt;
-            while (belt.acc + 1e-9 >= iv && unit.alive) {
+            while (belt.acc + 1e-9 >= iv && unit.alive) { // loop-cap: interval floored before the loop
               belt.acc -= iv;
               for (const e of beltVictims(battle, unit, belt)) battle.dealDamage(unit, e, { amount: unit.s.atk * num(b3.atk_scale), type: 'phys', isSkill: true, tags: ['skill', 'thumpy:belt'] });
             }
@@ -297,7 +301,7 @@ export default {
           battle.on('elementBurst', (c) => {
             const belt = unit.mem.thumpyBelt, t = c.target;
             if (!belt || !up(unit) || c.element !== 'erosion' || !t || t.side !== 'enemy') return;
-            if (t.blockedBy !== unit && (t.isFlying || !bodyInKeys(t, belt.hurtSet))) return;
+            if (t.blockedBy !== unit && (t.isFlying || !bodyInRange(t, belt.hurtSet))) return;
             battle.addBuff(t, { key: BELT_BREAK, refresh: 'stack', stacks: 1, maxStacks: 1e6, mods: { defFlat: breakDef }, source: unit });
           }, { owner: unit });
         }

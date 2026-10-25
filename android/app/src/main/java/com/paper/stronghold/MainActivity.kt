@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_HW_LAYER = "webview_hw_layer" // opt-in; forcing it black-screens some OEM GPU drivers
         private const val KEY_COMPAT_MODE = "compat_mode"   // simplified view + 2D + no forced hardware layer
         private const val BLANK_SCREEN_WATCHDOG_MS = 12_000L
-        private const val MIN_WEBVIEW_CHROME = 87   // CSS `inset` shorthand; `replaceChildren` needs 86
+        private const val MIN_WEBVIEW_CHROME = 100   // CSS `inset` shorthand; `replaceChildren` needs 86
         private const val KEY_HIGH_REFRESH = "high_refresh"      // true = pin the highest refresh mode (120 Hz+)
         private const val KEY_EDGE_PADDING = "edge_padding_px"   // 0-200 px inset from each side (notch/punch-hole)
         private const val DEFAULT_LOCAL_URL = "http://127.0.0.1:3000"

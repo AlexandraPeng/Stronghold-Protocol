@@ -20,9 +20,9 @@ console.log('[bundle-android] Preparing Android app_bundle...');
 console.log('[bundle-android] Verifying voice manifest and assets (read-only)...');
 const voiceCheck = verifyVoicesManifest();
 if (!voiceCheck.ok) {
-  console.error(`✘ [bundle-android] 打包门禁失败: 发现 ${voiceCheck.missing.length} 条磁盘语音未在 data/assets.json 登记！`);
+  console.error(`✘ [bundle-android] 打包门禁失败: 发现 ${voiceCheck.missing.length} 条清单语音在磁盘缺失！`);
   console.error(`  缺少条目: ${voiceCheck.missing.slice(0, 5).join(', ')}${voiceCheck.missing.length > 5 ? '...' : ''}`);
-  console.error('  打包器禁止自动修改受控文件。如需同步，请手动执行: node tools/sync-voices-manifest.mjs --write');
+  console.error('  打包器禁止自动修改受控文件。请先下载缺失素材，再重新打包');
   process.exit(1);
 }
 console.log(`[bundle-android] 语音资产门禁通过: ${voiceCheck.diskCount}/${voiceCheck.manifestCount} 条已核对 (未触碰任何受跟踪文件)。`);

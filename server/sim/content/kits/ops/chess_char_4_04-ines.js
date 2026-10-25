@@ -49,7 +49,7 @@ export default withDefaults({
             unit.mem.sentry = null;
             unit.mem.inesSentryAt = null;
             const ax = from.x, ay = from.y, bx = unit.x, by = unit.y;
-            const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+            const L2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
             const w = num(bb.projectile_range, 1.4);
             const hits = [];
             for (const e of battle.aliveEnemies()) {
@@ -84,7 +84,7 @@ export default withDefaults({
           const key = `ines:aspd:${unit.id}`;
           const cur = target.findBuff(key);
           battle.addBuff(target, { key, mods: { aspd: (cur?.mods?.aspd ?? 0) - s }, source: unit });
-          if (!(unit.mem.inesAspdVictims = unit.mem.inesAspdVictims || []).includes(target.id)) unit.mem.inesAspdVictims.push(target.id);
+          if (!(unit.mem.inesAspdVictims ||= []).includes(target.id)) unit.mem.inesAspdVictims.push(target.id);
           battle.addBuff(unit, { key: 'ines:aspdGain', mods: { aspd: unit.mem.inesAspd } });
         },
         onEnd({ battle, unit }) { clearAspd(battle, unit); },

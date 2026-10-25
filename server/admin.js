@@ -1,3 +1,4 @@
+import { N_ } from '../shared/i18n.js';
 // server/admin.js — Web Admin & Live Monitoring Module for Stronghold Protocol
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -66,15 +67,16 @@ export class AdminService {
     this.startedAt = startedAt;
     this.buildTag = buildTag;
     // Default to environment ADMIN_SECRET or fallback to persistent/session token
-    this.secret = secret || 'stronghold-admin-2026';
+    this.secret = secret || null;
     this.isDraining = false;
     this.drainStartedAt = null;
 
-    recordAdminLog('info', `[AdminService] 初始化成功，当前版本: v${APP_VERSION} (tag: ${buildTag})`);
+    recordAdminLog('info', `[AdminService] initialized, version: v${APP_VERSION} (tag: ${buildTag})`);
   }
 
   /** Validate token or basic header */
   authenticate(req) {
+    if (!this.secret) return false;
     const authHeader = req.headers['authorization'] || '';
     if (authHeader.startsWith('Bearer ')) {
       return authHeader.slice(7).trim() === this.secret;
@@ -225,7 +227,7 @@ export class AdminService {
         this.lobby.broadcastRoom(r, {
           t: 'room.chat',
           playerId: 'system',
-          name: '📢 系统公告',
+          name: N_('📢 系统公告'),
           seat: -1,
           isSpectator: false,
           text,
@@ -236,7 +238,7 @@ export class AdminService {
         // ignore single room broadcast error
       }
     }
-    recordAdminLog('info', `[Admin] 发送系统公告给 ${count} 个房间: "${text}"`);
+    recordAdminLog('info', `[Admin] broadcast to ${count} rooms: "${text}"`);
     return true;
   }
 
@@ -250,7 +252,7 @@ export class AdminService {
     if (this.lobby) {
       this.lobby.isDraining = true;
     }
-    recordAdminLog('warn', '[Admin] 启动热重载平滑排空模式 (Graceful Drain)：新房间将拒绝创建，等待存量对局结束');
+    recordAdminLog('warn', '[Admin] Graceful drain started: refusing new rooms, waiting for active matches');
     return true;
   }
 }

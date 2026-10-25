@@ -4,7 +4,7 @@
 // ("How to add an operator (自选)").
 //
 // Forms (data/backups.json units.char_400_weedy, the DIY slot statuses): normal = E2 Lv1, skills at rank 4, no module;
-// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Potential 0 [ASSUMED: no account].
+// elite = E2 Lv60, rank 7, the picked module at stage 1 (tier 5) or 3 (tier 6). Full potential (the owner's decision of 2026-10-07).
 // Sources: character_table / skill_table / battle_equip_table / token_table (zh_CN, as built into backups.json; the cannon's
 // owner-form / module variants) and PRTS 温蒂 (蓄水炮强化 备注 "天赋文本后半段效果（及模组效果）的作用对象为温蒂自身"; S2 "攻击间隔增大
 // (+220%)", 备注 "溅射范围为0.9半径"; S3 备注 "蓄水炮以温蒂的攻击力进行发射…技能范围内没有敌人时温蒂/蓄水炮不会对应发射出液氮炮 /
@@ -46,9 +46,11 @@
 //   whose text gives no direction].
 
 import { num, traitBb, skillRec, up, giveSp } from '../shared/tier1.js';
+import { stepOf, STEP_PER_TICK } from '../../../../../shared/plugins/steps.js';
 import { absoluteRangeKeys } from '../../../targeting.js';
-import { COLS } from '../../../constants.js';
+import { bodyInRange } from '../../../body.js';
 import { startCountdown } from '../../tokens.js';
+import { hypot } from '../../../detmath.js';
 
 const S1 = 'skchr_weedy_1';
 const S2 = 'skchr_weedy_2';
@@ -92,7 +94,7 @@ export function rupture(battle, src, e, { duration, perTile, interval }) {
     return;
   }
   const st = { x: e.x, y: e.y, moved: 0, acc: 0 };
-  const step = (u) => { st.moved += Math.hypot(u.x - st.x, u.y - st.y); st.x = u.x; st.y = u.y; };
+  const step = (u) => { st.moved += hypot(u.x - st.x, u.y - st.y); st.x = u.x; st.y = u.y; };
   const flush = (u) => {
     const m = st.moved;
     st.moved = 0;
@@ -121,7 +123,7 @@ export function liquidNitrogen(battle, { shooter, src, atk, sbb, grid, force, pi
   const keys = absoluteRangeKeys(grid ?? GRID_4_1, shooter.tileR, shooter.tileC, shooter.dir, 0);
   const cands = battle.enemiesInKeys(keys, shooter, { canHitFly: true });
   if (!cands.length) return false;
-  const key = pick === 'nearest' ? (e) => Math.hypot(e.x - shooter.x, e.y - shooter.y) : (e) => battle.remainingDistance(e);
+  const key = pick === 'nearest' ? (e) => hypot(e.x - shooter.x, e.y - shooter.y) : (e) => battle.remainingDistance(e);
   let target = null, best = Infinity;
   for (const e of cands) {
     const v = key(e);
@@ -151,7 +153,7 @@ function cannonKit(t, owner) {
   const life = num(tokTalent(def, 'duration')?.bb?.duration, LIFE_FALLBACK);
   const boost = tokTalent(def, 'base_force_level')?.bb ?? {};                 // 蓄水炮强化: base_force_level, interval, sp
   const forceUp = num(boost.base_force_level);
-  const every = num(boost.interval), sp = num(boost.sp);
+  const every = stepOf('interval', num(boost.interval), 1), sp = num(boost.sp);
   const atkUp = num(tokTalent(def, 'atk', 'base_force_level')?.bb?.atk);      // PUS-X stage 2+: 温蒂 ATK +atk beside it
   const sk = def.skill ?? null;
   const sbb = sk?.bb ?? {};
@@ -169,7 +171,7 @@ function cannonKit(t, owner) {
       afterHit(battle, unit, target) {
         if (!target || !target.alive || target.side !== 'enemy' || target.isFlying) return;
         const ahead = new Set(absoluteRangeKeys(AHEAD, unit.tileR, unit.tileC, unit.dir, 0));
-        if (!ahead.has(Math.round(target.y) * COLS + Math.round(target.x))) return;
+        if (!bodyInRange(target, ahead)) return;
         battle.push(target, forceUp, { from: unit, dir: along(unit) });
       },
     },
@@ -206,7 +208,8 @@ function cannonKit(t, owner) {
         if (atkUp && !owner.findBuff(atkKey)) battle.addBuff(owner, { key: atkKey, mods: { atkPct: atkUp }, source: unit, tags: ['talent'] });
         if (!(every > 0) || !(sp > 0)) return;
         acc += dt;
-        while (acc + 1e-9 >= every) { acc -= every; giveSp(owner, sp); }
+        let guard = 0;
+        while (acc + 1e-9 >= every && guard++ < STEP_PER_TICK) { acc -= every; giveSp(owner, sp); } // loop-cap: stepOf interval
       }, { owner: unit });
     },
   };
@@ -246,7 +249,7 @@ export default {
             // every enemy the shot hits is pushed once the hit is resolved (a push of the main target inside the hit would
             // move the splash centre: ai.js resolveHit centres it on the target after the main hit's callbacks)
             onEachHit({ unit, target }) {
-              if (target && target.side === 'enemy') (unit.mem.weedyWet = unit.mem.weedyWet ?? []).push(target);
+              if (target && target.side === 'enemy') (unit.mem.weedyWet ??= []).push(target);
             },
             onHit({ battle, unit }) {
               const list = unit.mem.weedyWet ?? [];

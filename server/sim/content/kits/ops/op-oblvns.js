@@ -1,3 +1,4 @@
+import { hypot, sin, cos } from '../../../detmath.js';
 // 丰川祥子 — all three skills, note trajectories, shared Fever, module and talents.
 // PRTS Togawa_Sakiko, 2026-10-12. Numeric skill/talent values come from official blackboards.
 import { num, skillRec, talentBb, traitBb } from '../shared/tier1.js';
@@ -16,7 +17,7 @@ const PARAMS = {
   organ: { min: 0.4, update: 0.4, amp: 0.15, speed: 0.7, track: 1, turn: 1 / 12, radius: 1 },
   s3: { min: 0.8, update: 0.4, amp: 0.5, speed: 0.8, track: 1.3, turn: 0.25, radius: 1 },
 };
-const distance = (a, z) => Math.hypot(a.x - z.x, a.y - z.y);
+const distance = (a, z) => hypot(a.x - z.x, a.y - z.y);
 function touches(n, e, r = 0.12) {
   const box = hitRect(e);
   return box ? n.x >= box.x0 - r && n.x <= box.x1 + r && n.y >= box.y0 - r && n.y <= box.y1 + r : distance(n, e) <= r;
@@ -54,7 +55,7 @@ export default { [C]: (_bb, raw) => {
       const release = (type, mode, target = null, scale = 1, angle = null) => {
         const [dr, dc] = dirVec(u.dir);
         const a = (angle ?? (b.rng() * 40 - 20)) * Math.PI / 180;
-        const hx = dc * Math.cos(a) - dr * Math.sin(a), hy = dr * Math.cos(a) + dc * Math.sin(a);
+        const hx = dc * cos(a) - dr * sin(a), hy = dr * cos(a) + dc * sin(a);
         const freeScale = moduleEnhanced && (s.id === S2 || s.active || mode === 's1');
         const ranged = u.blocking.length === 0 && !freeScale ? num(tb.atk_scale, 0.8) : 1;
         const note = { source: u, x: u.x, y: u.y, hx, hy, ox: u.x, oy: u.y, ax: hx, ay: hy, mode,
@@ -91,9 +92,9 @@ export default { [C]: (_bb, raw) => {
         }
         const oldX = n.x, oldY = n.y;
         if (n.phase === 'track' && n.target) {
-          const dx = n.target.x - n.x, dy = n.target.y - n.y, d = Math.hypot(dx, dy) || 1;
+          const dx = n.target.x - n.x, dy = n.target.y - n.y, d = hypot(dx, dy) || 1;
           const x = n.hx * (1 - p.turn) + dx / d * p.turn, y = n.hy * (1 - p.turn) + dy / d * p.turn;
-          const len = Math.hypot(x, y) || 1; n.hx = x / len; n.hy = y / len;
+          const len = hypot(x, y) || 1; n.hx = x / len; n.hy = y / len;
           n.x += n.hx * p.track * dt; n.y += n.hy * p.track * dt;
           if (valid(n.target) && touches(n, n.target, Math.max(0.12, p.track * dt))) {
             damage(n, n.target);
@@ -102,9 +103,9 @@ export default { [C]: (_bb, raw) => {
           }
         } else {
           n.freeAge += dt; const x = n.freeAge * p.speed;
-          const y = p.amp * Math.min(3, Math.floor(x / (2 * Math.PI)) + 1) * Math.sin(x) * n.sign;
+          const y = p.amp * Math.min(3, Math.floor(x / (2 * Math.PI)) + 1) * sin(x) * n.sign;
           n.x = n.ox + n.ax * x - n.ay * y; n.y = n.oy + n.ay * x + n.ax * y;
-          const len = Math.hypot(n.x - oldX, n.y - oldY);
+          const len = hypot(n.x - oldX, n.y - oldY);
           if (len > 1e-9) { n.hx = (n.x - oldX) / len; n.hy = (n.y - oldY) / len; }
         }
         const inRange = u.rangeKeySet.has(Math.round(n.y) * COLS + Math.round(n.x));
